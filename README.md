@@ -17,6 +17,7 @@ banco **WIRS** (*Workplace Industrial Relations Survey*, 1990), distribuído no 
 | `apresentacao.html` | Apresentação renderizada |
 | `dados/WIRS.csv` | Banco de dados (1005 estabelecimentos × 6 itens, separador `;`) |
 | `instrucoes.md` | Enunciado da tarefa |
+| `Scaling Unobservable Constructs in Social Science - John Wiley.pdf` | Artigo-fonte: Bartholomew (1998), que publicou e analisou estes dados |
 
 ## Como renderizar
 
@@ -35,7 +36,8 @@ install.packages(c("ltm", "mirt", "ggplot2", "dplyr", "tidyr",
 ## Referências
 
 - Bartholomew, D. (1998). Scaling unobservable constructs in social science.
-  *Applied Statistics*, 47, 1–13.
+  *Applied Statistics*, 47, 1–13. (PDF neste repositório; a Tabela 1 do artigo é a
+  distribuição de padrões de resposta reproduzida na apresentação.)
 - Bartholomew, D., Steele, F., Moustaki, I. & Galbraith, J. (2002).
   *The Analysis and Interpretation of Multivariate Data for Social Scientists*. Chapman & Hall.
 - Rizopoulos, D. (2006). `ltm`: An R package for latent variable modeling and item

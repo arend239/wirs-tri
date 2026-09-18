@@ -17,6 +17,3 @@ renv/staging/
 *~
 
 **/*.quarto_ipynb
-
-# Artigo-fonte (JSTOR, uso pessoal - nao redistribuir)
-*.pdf
