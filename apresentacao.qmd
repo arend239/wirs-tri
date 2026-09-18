@@ -145,6 +145,39 @@ data.frame(
 Os canais vão do **mais informal e individual** (I1) ao **mais formal e sindicalizado** (I6).
 :::
 
+## Os dados brutos: os 64 padrões de resposta {.smaller}
+
+```{r}
+#| label: tab-padroes-completa
+todos <- expand.grid(rep(list(c(0, 1)), 6))[, 6:1]          # I1 … I6
+names(todos) <- paste0("I", 1:6)
+todos$pat <- apply(todos, 1, paste, collapse = "")
+obs_pat <- table(apply(wirs, 1, paste, collapse = ""))
+todos$freq <- as.integer(obs_pat[todos$pat]); todos$freq[is.na(todos$freq)] <- 0L
+todos$k <- rowSums(todos[, 1:6])
+todos$val <- strtoi(todos$pat, base = 2)
+todos <- todos[order(todos$k, todos$val), ]
+
+marca <- function(x) ifelse(x >= 50, paste0("<b>", x, "</b>"), as.character(x))
+bloco <- split(todos, rep(1:4, each = 16))
+tab <- do.call(cbind, lapply(bloco, function(b)
+  data.frame(Padrão = b$pat, n = marca(b$freq))))
+names(tab) <- rep(c("Padrão", "n"), 4)
+kable(tab, align = rep(c("l", "r"), 4), escape = FALSE, row.names = FALSE)
+```
+
+::: {.small}
+Cada padrão lista as respostas na ordem **I1 I2 I3 I4 I5 I6**; leitura por coluna, em ordem
+crescente do número de canais usados. Dos 64 padrões possíveis, **`r sum(todos$freq > 0)`
+foram observados** — e os quatro em negrito concentram `r pct(100 * sum(todos$freq[todos$freq >= 50]) / n_obs, 0)`
+da amostra. Tabela esparsa como esta é o motivo de usarmos $M_2$, de margens limitadas,
+em vez do $\chi^2$ sobre os `r nrow(todos)` padrões.
+:::
+
+::: {.rodape-fonte}
+Reproduz a Tabela 1 de Bartholomew (1998), *Applied Statistics* 47, p. 3.
+:::
+
 ## Definição do traço latente {.smaller}
 
 ::: {.destaque}
