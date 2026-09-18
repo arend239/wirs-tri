@@ -1,7 +1,7 @@
 ---
 title: "Calibração de um traço latente a partir do banco WIRS"
 subtitle: "Teoria de Resposta ao Item aplicada a dados de consulta trabalhista"
-author: "João Vitor Arend"
+author: "João Arend · Giovanni Zini"
 institute: "MAT02012 — Tópicos Avançados em Estatística IV · UFRGS"
 date: today
 date-format: "DD/MM/YYYY"
