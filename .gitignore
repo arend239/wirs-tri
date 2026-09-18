@@ -1,0 +1,19 @@
+# Quarto
+/.quarto/
+*_files/
+*_cache/
+/_site/
+
+# R
+.Rproj.user/
+.Rhistory
+.RData
+.Rprofile.local
+renv/library/
+renv/staging/
+
+# Sistema
+.DS_Store
+*~
+
+**/*.quarto_ipynb

@@ -1,0 +1,840 @@
+---
+title: "Calibração de um traço latente a partir do banco WIRS"
+subtitle: "Teoria de Resposta ao Item aplicada a dados de consulta trabalhista"
+author: "João Vitor Arend"
+institute: "MAT02012 — Tópicos Avançados em Estatística IV · UFRGS"
+date: today
+date-format: "DD/MM/YYYY"
+lang: pt-BR
+format:
+  revealjs:
+    theme: [default, custom.scss]
+    slide-number: true
+    show-slide-number: all
+    transition: fade
+    transition-speed: fast
+    width: 1280
+    height: 760
+    margin: 0.06
+    center: false
+    footer: "TRI · banco WIRS (pacote `ltm`)"
+    fig-align: center
+    df-print: kable
+    html-math-method: mathjax
+    embed-resources: true
+execute:
+  echo: false
+  warning: false
+  message: false
+  cache: true
+  fig-width: 9
+  fig-height: 4.2
+  dpi: 200
+---
+
+```{r}
+#| label: setup
+#| cache: false
+
+library(ltm)
+library(mirt)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(patchwork)
+library(knitr)
+
+set.seed(2026)
+
+# ---- cores e tema --------------------------------------------------------
+cor_principal <- "#0d3b66"
+cor_destaque  <- "#0b6b5e"
+cor_alerta    <- "#c0392b"
+paleta_itens  <- c("#0d3b66", "#0b6b5e", "#b5651d", "#7d4e9c", "#3f7d20", "#a01a3d")
+
+theme_tri <- function(base_size = 13) {
+  theme_minimal(base_size = base_size) +
+    theme(
+      panel.grid.minor = element_blank(),
+      panel.grid.major = element_line(colour = "#e7e9ec"),
+      plot.title = element_text(face = "bold", colour = cor_principal, size = base_size * 1.05),
+      plot.subtitle = element_text(colour = "#5b6270", size = base_size * 0.85),
+      legend.position = "bottom",
+      legend.title = element_blank(),
+      strip.text = element_text(face = "bold", colour = cor_principal)
+    )
+}
+theme_set(theme_tri())
+
+# ---- dados ---------------------------------------------------------------
+wirs <- read.csv2("dados/WIRS.csv", check.names = FALSE)
+names(wirs) <- paste0("I", 1:6)
+
+itens_txt <- c(
+  "Discussão informal com trabalhadores individualmente",
+  "Reunião com grupos de trabalhadores",
+  "Discussão em comitê consultivo conjunto já existente",
+  "Discussão em comitê constituído especialmente para a mudança",
+  "Discussão com representantes sindicais do estabelecimento",
+  "Discussão com dirigentes sindicais externos (remunerados)"
+)
+itens_curto <- c("Informal individual", "Reunião de grupo", "Comitê permanente",
+                 "Comitê ad hoc", "Sindicato interno", "Sindicato externo")
+
+wirs5 <- wirs[, -1]
+itens_txt5   <- itens_txt[-1]
+itens_curto5 <- itens_curto[-1]
+n_obs <- nrow(wirs)
+```
+
+## Roteiro {.smaller}
+
+::: {.destaque}
+1. **O banco WIRS** — origem, itens e delineamento amostral
+2. **Definição do traço latente** — o que os itens medem em comum
+3. **Pressupostos da TRI** — dimensionalidade e independência local
+4. **Calibração** — escolha do modelo com base em evidências estatísticas
+5. **Estimação de $\theta$** — escores dos 1005 estabelecimentos
+6. **Descrição do traço estimado** — distribuição, precisão e interpretação
+:::
+
+## O banco de dados {.smaller}
+
+**WIRS — *Workplace Industrial Relations Survey* (1990, Reino Unido)**
+
+- Levantamento nacional sobre relações de trabalho em estabelecimentos britânicos.
+- Subconjunto distribuído no pacote `ltm`: `r n_obs` estabelecimentos e 6 itens dicotômicos.
+- **Pergunta de contexto** feita ao gestor:
+
+::: {.destaque}
+"Considere a mudança mais recente envolvendo a introdução de novas instalações,
+máquinas e equipamentos. **Houve discussões ou consultas de algum dos tipos deste
+cartão**, seja sobre a introdução da mudança, seja sobre a forma de implementá-la?"
+:::
+
+- Cada item: **1** = aquele canal de consulta foi usado; **0** = não foi usado.
+- Nenhum dado faltante; a matriz de respostas é completa ($1005 \times 6$).
+
+::: {.rodape-fonte}
+Fonte: Bartholomew (1998), *Applied Statistics* 47, 1–13; Bartholomew, Steele, Moustaki & Galbraith (2002).
+:::
+
+## Os seis itens
+
+```{r}
+#| label: tab-itens
+data.frame(
+  Item = paste0("I", 1:6),
+  Canal = itens_curto,
+  Descrição = itens_txt,
+  `Proporção 1` = sprintf("%.3f", colMeans(wirs)),
+  check.names = FALSE
+) |>
+  kable(align = "llllr")
+```
+
+::: {.small}
+Os canais vão do **mais informal e individual** (I1) ao **mais formal e sindicalizado** (I6).
+A proporção de uso cai à medida que o canal se institucionaliza.
+:::
+
+## Definição do traço latente {.smaller}
+
+::: {.destaque}
+$\theta$ = **grau de institucionalização da consulta aos trabalhadores** diante de uma
+mudança tecnológica no estabelecimento.
+:::
+
+- Não é "quanta consulta existe", e sim **por quais canais** ela acontece.
+- Valores **baixos** de $\theta$: a consulta, quando ocorre, se dá por canais diretos e
+  informais — ou simplesmente não ocorre.
+- Valores **altos** de $\theta$: o estabelecimento aciona **estruturas coletivas
+  permanentes** — comitês consultivos e representação sindical, interna e externa.
+
+. . .
+
+**Por que um traço latente e não o escore bruto?**
+
+- Os canais têm "custos" institucionais diferentes: usar um comitê consultivo permanente
+  diz mais sobre o estabelecimento do que uma conversa de corredor.
+- A TRI pondera cada item pela sua **dificuldade** e pelo seu **poder de discriminação**,
+  em vez de somar respostas como se todas valessem o mesmo.
+
+## Modelos candidatos {.smaller}
+
+Para resposta dicotômica $U_{ij} \in \{0,1\}$ do estabelecimento $j$ ao item $i$:
+
+$$P(U_{ij} = 1 \mid \theta_j) = c_i + (1 - c_i)\,\frac{1}{1 + e^{-a_i(\theta_j - b_i)}}$$
+
+::: {.small}
+| Modelo | Restrição | Parâmetros por item | Leitura |
+|---|---|---|---|
+| **Rasch** | $a_i = 1$, $c_i = 0$ | $b_i$ | itens diferem só em dificuldade |
+| **1PL** | $a_i = a$, $c_i = 0$ | $b_i$ (+ um $a$ comum) | discriminação comum estimada |
+| **2PL** | $c_i = 0$ | $a_i, b_i$ | itens discriminam de forma distinta |
+| **3PL** | — | $a_i, b_i, c_i$ | acrescenta "acerto ao acaso" |
+:::
+
+::: {.destaque .small}
+A escolha entre eles **não** é por gosto: comparamos ajuste por razão de verossimilhança,
+critérios de informação e medidas de ajuste absoluto.
+:::
+
+## Pressupostos a verificar antes de calibrar
+
+::: {.small}
+1. **Unidimensionalidade** — um único $\theta$ explica a associação entre os itens.
+2. **Independência local** — dadas as respostas condicionadas a $\theta$, os itens são independentes.
+3. **Monotonicidade** — $P(U_i = 1 \mid \theta)$ é crescente em $\theta$.
+:::
+
+```{r}
+#| label: plot-tetra
+#| fig-height: 3.6
+tet <- polycor::hetcor(as.data.frame(lapply(wirs, factor)), ML = FALSE, std.err = FALSE)$correlations
+as.data.frame(as.table(tet)) |>
+  setNames(c("i", "j", "r")) |>
+  ggplot(aes(i, j, fill = r)) +
+  geom_tile(colour = "white", linewidth = 1) +
+  geom_text(aes(label = sprintf("%.2f", r)), size = 3.6,
+            colour = ifelse(abs(as.vector(tet)) > 0.6, "white", "grey15")) +
+  scale_fill_gradient2(low = cor_alerta, mid = "white", high = cor_principal,
+                       midpoint = 0, limits = c(-1, 1)) +
+  labs(title = "Correlações tetracóricas entre os seis itens",
+       subtitle = "I1 se associa negativamente a I2 e I4 — sinal contrário ao dos demais",
+       x = NULL, y = NULL) +
+  theme(legend.position = "right", panel.grid = element_blank())
+```
+
+## Evidência 1 — análise fatorial exploratória {.smaller}
+
+```{r}
+#| label: efa
+efa1 <- mirt(wirs, 1, itemtype = "2PL", verbose = FALSE)
+efa2 <- mirt(wirs, 2, itemtype = "2PL", verbose = FALSE)
+cmp_fatores <- anova(efa1, efa2, verbose = FALSE)
+cargas <- summary(efa2, rotate = "oblimin", verbose = FALSE)$rotF
+tab_cargas <- data.frame(
+  Item = paste0("I", 1:6), Canal = itens_curto,
+  F1 = sprintf("%.2f", cargas[, 1]), F2 = sprintf("%.2f", cargas[, 2])
+)
+kable(tab_cargas, align = "llrr",
+      col.names = c("Item", "Canal", "Fator 1", "Fator 2"))
+```
+
+::: {.small}
+Modelo de 2 fatores (oblimin) ajustado com `mirt`. O **Fator 2 é bipolar**: contrasta
+discussão informal individual (I1, $\lambda = `r sprintf("%.2f", cargas[1,2])`$) com
+reunião de grupo (I2, $\lambda = `r sprintf("%.2f", cargas[2,2])`$) — são canais
+**substitutos**, não manifestações do mesmo traço. O Fator 1 reúne I3–I6.
+:::
+
+## Evidência 2 — análise paralela e consistência {.smaller}
+
+:::: {.columns}
+::: {.column width="52%"}
+```{r}
+#| label: unidim
+ud6 <- unidimTest(ltm(wirs ~ z1), B = 100)
+desc6 <- descript(wirs)
+```
+
+**Análise paralela modificada** (`unidimTest`, $B = 100$):
+
+- 2º autovalor observado: **`r sprintf("%.3f", ud6$Tobs[2])`**
+- média sob o modelo unidimensional: `r sprintf("%.3f", mean(ud6$T.boot[,2]))`
+- valor-p: **`r format.pval(ud6$p.value, digits = 3)`**
+
+$\Rightarrow$ a hipótese de unidimensionalidade é **rejeitada** com os seis itens.
+:::
+
+::: {.column width="48%"}
+```{r}
+#| label: tab-alpha
+data.frame(
+  `Item excluído` = c("nenhum", paste0("I", 1:6)),
+  Alfa = sprintf("%.3f", desc6$alpha[, 1]),
+  `Bisserial (excluindo o item)` = c("—", sprintf("%.3f", desc6$ExBisCorr)),
+  check.names = FALSE
+) |> kable(align = "lrr")
+```
+
+::: {.smaller}
+O alfa **sobe** ao remover I1 e a correlação bisserial de I1 com o escore dos demais
+itens é **negativa**: I1 puxa contra o construto.
+:::
+:::
+::::
+
+## Evidência 3 — dependência local no modelo 2PL {.smaller}
+
+```{r}
+#| label: ld6
+m2pl6 <- mirt(wirs, 1, itemtype = "2PL", verbose = FALSE)
+ld6 <- residuals(m2pl6, type = "LD", verbose = FALSE)
+ld_tab <- as.data.frame(as.table(ld6)) |>
+  setNames(c("i", "j", "v")) |>
+  filter(!is.na(v)) |>
+  mutate(par = paste(j, "–", i))
+lower <- ld_tab |>
+  filter(match(as.character(i), paste0("I", 1:6)) > match(as.character(j), paste0("I", 1:6))) |>
+  arrange(desc(v)) |> head(5)
+kable(data.frame(Par = lower$par, `LD X²` = sprintf("%.1f", lower$v), check.names = FALSE),
+      align = "lr")
+```
+
+::: {.small}
+Estatística $LD\,\chi^2$ de Chen & Thissen (1 g.l.): valores acima de ~10 indicam
+violação séria de independência local. O par **I1–I2** atinge
+**`r sprintf("%.0f", max(lower$v))`** — mais de dez vezes o limiar.
+:::
+
+::: {.alerta .small}
+**Diagnóstico convergente:** I1 (discussão informal individual) não pertence à mesma
+escala. Ele mede o **oposto** da institucionalização — quanto mais o gestor resolve na
+conversa individual, menos aciona canais coletivos.
+:::
+
+## Decisão: calibrar os itens I2–I6 {.smaller}
+
+```{r}
+#| label: comp-m2
+m2pl5 <- mirt(wirs5, 1, itemtype = "2PL", verbose = FALSE)
+M2_6 <- M2(m2pl6); M2_5 <- M2(m2pl5)
+tab_m2 <- data.frame(
+  Conjunto = c("6 itens (I1–I6)", "5 itens (I2–I6)"),
+  M2 = sprintf("%.1f", c(M2_6$M2, M2_5$M2)),
+  gl = c(M2_6$df, M2_5$df),
+  p = format.pval(c(M2_6$p, M2_5$p), digits = 2, eps = 1e-4),
+  RMSEA = sprintf("%.3f", c(M2_6$RMSEA, M2_5$RMSEA)),
+  SRMSR = sprintf("%.3f", c(M2_6$SRMSR, M2_5$SRMSR)),
+  TLI = sprintf("%.3f", c(M2_6$TLI, M2_5$TLI)),
+  CFI = sprintf("%.3f", c(M2_6$CFI, M2_5$CFI))
+)
+kable(tab_m2, align = "lrrrrrrr")
+```
+
+::: {.small}
+Ajuste absoluto do modelo 2PL unidimensional ($M_2$ de Maydeu-Olivares & Joe).
+Critérios usuais: RMSEA $< 0{,}06$, SRMSR $< 0{,}05$, CFI/TLI $> 0{,}90$.
+:::
+
+::: {.destaque .small}
+Com I1 no conjunto o modelo unidimensional é **inaceitável**
+(RMSEA = `r sprintf("%.3f", M2_6$RMSEA)`, CFI = `r sprintf("%.2f", M2_6$CFI)`).
+Sem I1, o ajuste entra na faixa aceitável
+(RMSEA = `r sprintf("%.3f", M2_5$RMSEA)`, CFI = `r sprintf("%.2f", M2_5$CFI)`,
+SRMSR = `r sprintf("%.3f", M2_5$SRMSR)`).
+**O traço passa a ser estimado por I2–I6.**
+:::
+
+# Calibração dos itens {background-color="#0d3b66"}
+
+## Ajuste dos quatro modelos {.smaller}
+
+```{r}
+#| label: ajustes
+#| echo: true
+#| code-line-numbers: "|2|3|4|5"
+J <- ncol(wirs5)
+mod_rasch <- rasch(wirs5, constraint = cbind(J + 1, 1))   # a = 1 fixo
+mod_1pl   <- rasch(wirs5)                                 # a comum, estimado
+mod_2pl   <- ltm(wirs5 ~ z1)                              # a_i livres
+mod_3pl   <- tpm(wirs5, type = "latent.trait")            # acrescenta c_i
+```
+
+```{r}
+#| label: tab-ajuste
+lrt <- function(m0, m1) {
+  a <- suppressWarnings(anova(m0, m1))
+  if (a$LRT < 0) return("solução instável (máximo local)")
+  sprintf("%.1f (%d gl), p %s", a$LRT, a$df,
+          format.pval(a$p.value, digits = 2, eps = 1e-4))
+}
+tab_mod <- data.frame(
+  Modelo = c("Rasch", "1PL", "2PL", "3PL"),
+  `log-verossimilhança` = sprintf("%.1f", c(logLik(mod_rasch), logLik(mod_1pl),
+                                            logLik(mod_2pl), logLik(mod_3pl))),
+  `nº par.` = c(attr(logLik(mod_rasch), "df"), attr(logLik(mod_1pl), "df"),
+                attr(logLik(mod_2pl), "df"), attr(logLik(mod_3pl), "df")),
+  AIC = sprintf("%.1f", c(AIC(mod_rasch), AIC(mod_1pl), AIC(mod_2pl), AIC(mod_3pl))),
+  BIC = sprintf("%.1f", c(BIC(mod_rasch), BIC(mod_1pl), BIC(mod_2pl), BIC(mod_3pl))),
+  `TRV vs. modelo anterior` = c("—", lrt(mod_rasch, mod_1pl),
+                                lrt(mod_1pl, mod_2pl), lrt(mod_2pl, mod_3pl)),
+  check.names = FALSE
+)
+kable(tab_mod, align = "lrrrrl")
+```
+
+::: {.small}
+Modelos encaixados, estimados por máxima verossimilhança marginal com quadratura
+de Gauss–Hermite (`ltm`). A linha do **3PL** traz a solução devolvida por `tpm()`, que
+**não converge para um máximo válido** — ver o slide seguinte.
+:::
+
+## Leitura da comparação {.smaller}
+
+```{r}
+#| label: mirt3pl
+m3pl5 <- mirt(wirs5, 1, itemtype = "3PL", verbose = FALSE)
+cmp3 <- anova(m2pl5, m3pl5, verbose = FALSE)
+```
+
+::: {.destaque}
+**Rasch $\to$ 1PL $\to$ 2PL:** cada passo melhora significativamente a verossimilhança e
+**AIC e BIC caem juntos** — os itens de fato discriminam de maneira diferente.
+:::
+
+::: {.alerta}
+**2PL $\to$ 3PL:** o algoritmo do `ltm` sequer alcança uma solução válida — a hessiana no
+ótimo não é positiva definida e a log-verossimilhança fica **abaixo** da do 2PL
+(máximo local). Reestimando por EM no `mirt`, o 3PL converge
+($\ell = `r sprintf("%.1f", cmp3$logLik[2])`$; TRV = `r sprintf("%.1f", cmp3$X2[2])`,
+`r cmp3$df[2]` gl), mas o **BIC piora**
+(`r sprintf("%.1f", cmp3$BIC[1])` $\to$ `r sprintf("%.1f", cmp3$BIC[2])`).
+:::
+
+```{r}
+#| label: coef3pl
+c3 <- coef(mod_3pl)
+data.frame(
+  Item = rownames(c3), Canal = itens_curto5,
+  `c (acaso)` = sprintf("%.3f", c3[, 1]),
+  `b (dificuldade)` = sprintf("%.2f", c3[, 2]),
+  `a (discriminação)` = sprintf("%.2f", c3[, 3]),
+  check.names = FALSE
+) |> kable(align = "llrrr")
+```
+
+::: {.small}
+Estimativas do 3PL no `ltm`: as discriminações explodem (até $a = `r sprintf("%.1f", max(c3[, 3]))`$)
+para acomodar um $c_i$ que **não tem sentido substantivo aqui** — não se "acerta ao acaso" a
+existência de um comitê consultivo. No `mirt` o quadro se repete: $c$ = `r sprintf("%.2f", coef(m3pl5, IRTpars = TRUE, simplify = TRUE)$items["I2","g"])`
+para I2 e $a$ = `r sprintf("%.1f", max(coef(m3pl5, IRTpars = TRUE, simplify = TRUE)$items[,"a"]))` para I4.
+**O parâmetro de acaso não é identificável com cinco itens dicotômicos.**
+:::
+
+## Modelo escolhido: 2PL com cinco itens {.smaller}
+
+$$P(U_{ij} = 1 \mid \theta_j) = \frac{1}{1 + \exp\{-a_i(\theta_j - b_i)\}}, \qquad \theta_j \sim N(0,1)$$
+
+::: {.destaque .small}
+**Justificativa estatística, em quatro linhas de evidência:**
+
+1. **TRV**: 2PL supera 1PL/Rasch (`r lrt(mod_1pl, mod_2pl)`); as discriminações variam de fato.
+2. **Critérios de informação**: 2PL tem o menor **BIC** entre os quatro modelos.
+3. **Ajuste absoluto**: $M_2$ = `r sprintf("%.1f", M2_5$M2)` (`r M2_5$df` gl), RMSEA = `r sprintf("%.3f", M2_5$RMSEA)`, SRMSR = `r sprintf("%.3f", M2_5$SRMSR)`, CFI = `r sprintf("%.3f", M2_5$CFI)`.
+4. **Parcimônia identificável**: o 3PL acrescenta parâmetros sem significado no contexto e não converge de forma estável.
+:::
+
+```{r}
+#| label: itemfit
+if_5 <- itemfit(m2pl5)
+ifit_ltm <- item.fit(mod_2pl, G = 6, simulate.p.value = TRUE, B = 100)
+```
+
+::: {.small}
+**Ajuste por item** ($S\text{-}X^2$ de Orlando & Thissen): nenhum dos cinco itens é
+rejeitado ao nível de 1% (menor $p$ = `r sprintf("%.3f", min(if_5$p.S_X2))`).
+O teste $\chi^2$ com valor-p por Monte Carlo (`item.fit`, `ltm`) leva à mesma conclusão
+(menor $p$ = `r sprintf("%.3f", min(ifit_ltm$p.values))`).
+:::
+
+## Parâmetros calibrados {.smaller}
+
+```{r}
+#| label: tab-param
+cf <- coef(mod_2pl)
+tab_par <- data.frame(
+  Item = rownames(cf), Canal = itens_curto5,
+  `b (dificuldade)` = sprintf("%.2f", cf[, "Dffclt"]),
+  `a (discriminação)` = sprintf("%.2f", cf[, "Dscrmn"]),
+  `P(θ = 0)` = sprintf("%.2f", plogis(cf[, "Dscrmn"] * (0 - cf[, "Dffclt"]))),
+  `P(θ = 1)` = sprintf("%.2f", plogis(cf[, "Dscrmn"] * (1 - cf[, "Dffclt"]))),
+  check.names = FALSE
+)
+kable(tab_par[order(cf[, "Dffclt"]), ], align = "llrrrr", row.names = FALSE)
+```
+
+::: {.small}
+- **Ordenação por dificuldade** reproduz exatamente a hierarquia institucional esperada:
+  reunião de grupo $\to$ sindicato interno $\to$ comitê permanente $\to$ comitê ad hoc $\to$ sindicato externo.
+- **I5** (representantes sindicais no estabelecimento) é o item mais discriminativo
+  ($a = `r sprintf("%.2f", cf["I5","Dscrmn"])`$): é o divisor de águas entre consultar e institucionalizar.
+- **I2** discrimina pouco ($a = `r sprintf("%.2f", cf["I2","Dscrmn"])`$): reunir grupos de
+  trabalhadores é prática difundida e diz pouco sobre o traço.
+:::
+
+## Curvas características dos itens (CCI)
+
+```{r}
+#| label: plot-cci
+#| fig-height: 4.4
+grade <- seq(-4, 4, length.out = 400)
+cci <- lapply(seq_len(nrow(cf)), function(i) {
+  data.frame(theta = grade,
+             p = plogis(cf[i, "Dscrmn"] * (grade - cf[i, "Dffclt"])),
+             item = sprintf("%s — %s", rownames(cf)[i], itens_curto5[i]))
+}) |> bind_rows()
+
+pontos_b <- data.frame(theta = cf[, "Dffclt"], p = 0.5,
+                       item = sprintf("%s — %s", rownames(cf), itens_curto5))
+
+ggplot(cci, aes(theta, p, colour = item)) +
+  geom_hline(yintercept = 0.5, linetype = "dotted", colour = "grey55") +
+  geom_line(linewidth = 1.1) +
+  geom_point(data = pontos_b, size = 2.4, show.legend = FALSE) +
+  scale_colour_manual(values = paleta_itens) +
+  scale_x_continuous(breaks = -4:4) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  labs(title = "Probabilidade de usar cada canal de consulta",
+       subtitle = "Pontos marcam a dificuldade b_i (probabilidade de 50%)",
+       x = expression(theta ~ "(institucionalização da consulta)"),
+       y = expression(P(U[i] == 1 ~ "|" ~ theta))) +
+  guides(colour = guide_legend(nrow = 2))
+```
+
+## Informação dos itens e da escala {.smaller}
+
+```{r}
+#| label: plot-info
+#| fig-height: 4.0
+info_i <- lapply(seq_len(nrow(cf)), function(i) {
+  a <- cf[i, "Dscrmn"]; b <- cf[i, "Dffclt"]
+  P <- plogis(a * (grade - b))
+  data.frame(theta = grade, I = a^2 * P * (1 - P),
+             item = sprintf("%s — %s", rownames(cf)[i], itens_curto5[i]))
+}) |> bind_rows()
+
+info_tot <- info_i |> group_by(theta) |> summarise(I = sum(I), .groups = "drop") |>
+  mutate(EP = 1 / sqrt(I))
+
+g1 <- ggplot(info_i, aes(theta, I, colour = item)) +
+  geom_line(linewidth = 1) +
+  scale_colour_manual(values = paleta_itens) +
+  labs(title = "Informação de cada item", x = expression(theta), y = expression(I[i](theta))) +
+  guides(colour = guide_legend(nrow = 3)) +
+  theme(legend.text = element_text(size = 8))
+
+g2 <- ggplot(info_tot, aes(theta)) +
+  geom_area(aes(y = I), fill = cor_principal, alpha = 0.18) +
+  geom_line(aes(y = I), colour = cor_principal, linewidth = 1.1) +
+  geom_line(aes(y = EP), colour = cor_alerta, linewidth = 1, linetype = "22") +
+  annotate("text", x = -3.7, y = 1.45, label = "erro-padrão", colour = cor_alerta,
+           size = 3.4, hjust = 0) +
+  annotate("text", x = 1.9, y = 1.9, label = "informação", colour = cor_principal, size = 3.4) +
+  coord_cartesian(ylim = c(0, 2.8)) +
+  labs(title = "Informação total e erro-padrão", x = expression(theta),
+       y = expression(I(theta) ~ "/" ~ EP(theta))) +
+  theme(legend.position = "none")
+
+g1 + g2
+```
+
+::: {.small}
+A escala é **mais precisa entre $\theta \approx `r sprintf("%.1f", info_tot$theta[which.max(info_tot$I)] - 1)`$ e
+$`r sprintf("%.1f", info_tot$theta[which.max(info_tot$I)] + 1)`$** (máximo de informação em
+$\theta = `r sprintf("%.2f", info_tot$theta[which.max(info_tot$I)])`$) — ou seja, discrimina bem
+entre estabelecimentos de institucionalização média e alta, e mal na parte baixa da escala.
+:::
+
+# Estimação do traço latente {background-color="#0d3b66"}
+
+## Método de estimação {.smaller}
+
+:::: {.columns}
+::: {.column width="55%"}
+```{r}
+#| label: escores
+#| echo: true
+fs <- factor.scores(mod_2pl, resp.patterns = wirs5,
+                    method = "EAP")
+theta <- fs$score.dat$z1
+ep    <- fs$score.dat$se.z1
+```
+
+```{r}
+#| label: escores2
+theta_mirt <- as.numeric(fscores(m2pl5, method = "EAP"))
+rel_emp <- as.numeric(empirical_rxx(fscores(m2pl5, full.scores.SE = TRUE)))
+n_zeros <- sum(rowSums(wirs5) == 0)
+n_uns <- sum(rowSums(wirs5) == ncol(wirs5))
+```
+:::
+
+::: {.column width="45%"}
+::: {.small}
+**Por que EAP e não máxima verossimilhança?**
+
+- `r n_zeros` estabelecimentos (`r sprintf("%.1f", 100*n_zeros/n_obs)`%) não usaram
+  **nenhum** canal e `r n_uns` usaram **todos**: a EMV é $\mp\infty$ nesses padrões.
+- O EAP usa a priori $N(0,1)$, é finito para todo padrão e minimiza o erro quadrático médio.
+- Preço: **encolhimento** em direção a 0 — a variância dos escores subestima a variância do traço.
+:::
+:::
+::::
+
+::: {.destaque .small}
+Com 5 itens dicotômicos há apenas $2^5 = 32$ padrões possíveis: $\theta$ estimado é
+**discreto**, com `r length(unique(round(theta, 6)))` valores distintos na amostra.
+:::
+
+## Distribuição do traço estimado {.smaller}
+
+```{r}
+#| label: plot-dist
+#| fig-height: 3.7
+dt <- data.frame(theta = theta, ep = ep, escore = rowSums(wirs5))
+
+massa <- dt |> count(theta, name = "freq") |> mutate(p = freq / sum(freq))
+
+g_hist <- ggplot(massa, aes(theta, p)) +
+  geom_segment(aes(xend = theta, yend = 0), colour = cor_principal, linewidth = 1.1) +
+  geom_point(colour = cor_principal, size = 2) +
+  geom_vline(xintercept = mean(dt$theta), colour = cor_destaque, linewidth = 0.8,
+             linetype = "22") +
+  annotate("text", x = mean(dt$theta) + 0.06, y = 0.21, hjust = 0, size = 3.3,
+           colour = cor_destaque, label = "média") +
+  scale_x_continuous(breaks = -1:2, limits = c(-1.1, 2)) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  labs(title = "Distribuição dos escores EAP",
+       subtitle = "Um traço por padrão de resposta observado (32 valores)",
+       x = expression(hat(theta)), y = "proporção de estabelecimentos")
+
+g_ecdf <- ggplot(dt, aes(theta)) +
+  stat_function(fun = pnorm, colour = cor_alerta, linewidth = 0.9, linetype = "22") +
+  stat_ecdf(geom = "step", colour = cor_principal, linewidth = 1) +
+  annotate("text", x = 1.15, y = 0.62, label = "N(0,1) a priori", colour = cor_alerta,
+           size = 3.3, hjust = 0) +
+  scale_x_continuous(breaks = -1:2, limits = c(-1.1, 2)) +
+  labs(title = "Acumulada empírica vs. a priori",
+       subtitle = "Escores EAP mais concentrados: encolhimento",
+       x = expression(hat(theta)), y = "F(θ)")
+
+g_hist + g_ecdf
+```
+
+::: {.small}
+Média = `r ifelse(abs(mean(theta)) < 5e-4, "0.000", sprintf("%.3f", mean(theta)))`, desvio-padrão = `r sprintf("%.3f", sd(theta))`,
+mediana = `r sprintf("%.3f", median(theta))`, assimetria =
+`r sprintf("%.2f", mean((theta - mean(theta))^3) / sd(theta)^3)`.
+:::
+
+## Mapa item–pessoa (Wright map) {.smaller}
+
+```{r}
+#| label: plot-wright
+#| fig-height: 3.7
+g_pes <- ggplot(dt, aes(theta)) +
+  geom_histogram(bins = 32, fill = cor_principal, alpha = 0.75, colour = "white") +
+  scale_x_continuous(breaks = -3:3) +
+  coord_cartesian(xlim = c(-3, 3.2)) +
+  labs(title = "Estabelecimentos", x = NULL, y = "frequência")
+
+itens_map <- data.frame(b = cf[, "Dffclt"], a = cf[, "Dscrmn"],
+                        lab = sprintf("%s · %s", rownames(cf), itens_curto5))
+g_it <- ggplot(itens_map, aes(b, reorder(lab, b))) +
+  geom_segment(aes(x = b - 1 / a, xend = b + 1 / a, yend = reorder(lab, b)),
+               colour = "grey70", linewidth = 1.6) +
+  geom_point(aes(size = a), colour = cor_destaque) +
+  scale_size_continuous(range = c(2.5, 5.5), guide = "none") +
+  scale_x_continuous(breaks = -3:3) +
+  coord_cartesian(xlim = c(-3, 3.2)) +
+  labs(title = "Itens (dificuldade b, faixa ±1/a)",
+       x = expression(theta ~ "/" ~ b), y = NULL)
+
+g_pes / g_it + plot_layout(heights = c(1, 1.15))
+```
+
+::: {.small}
+Os itens se concentram **acima** da maior parte da população: quase todos os $b_i$ são
+positivos, enquanto `r sprintf("%.0f", 100 * mean(theta < 0))`% dos estabelecimentos têm
+$\hat\theta < 0$. A escala é exigente — foi construída para separar quem institucionaliza
+a consulta, e há pouca informação para distinguir entre os que não consultam.
+:::
+
+## Precisão da medida {.smaller}
+
+```{r}
+#| label: plot-precisao
+#| fig-height: 3.1
+g_ep <- ggplot(dt, aes(theta, ep)) +
+  geom_point(colour = cor_principal, alpha = 0.5, size = 2) +
+  labs(title = "Erro-padrão do escore EAP", x = expression(hat(theta)), y = "EP")
+
+faixas <- dt |>
+  mutate(faixa = cut(theta, breaks = c(-Inf, -0.5, 0.5, 1.5, Inf),
+                     labels = c("baixo", "médio-baixo", "médio-alto", "alto"))) |>
+  group_by(faixa) |>
+  summarise(n = n(), `%` = sprintf("%.1f", 100 * n() / n_obs),
+            `EP médio` = sprintf("%.2f", mean(ep)), .groups = "drop")
+
+g_bar <- ggplot(dt, aes(factor(escore))) +
+  geom_bar(fill = cor_destaque, alpha = 0.8) +
+  labs(title = "Nº de canais utilizados", x = "escore bruto (0–5)", y = "frequência")
+
+g_ep + g_bar
+```
+
+:::: {.columns}
+::: {.column width="52%"}
+```{r}
+#| label: tab-faixas
+kable(faixas, align = "lrrr")
+```
+:::
+::: {.column width="48%"}
+::: {.small}
+- **Confiabilidade empírica** (marginal): **`r sprintf("%.3f", rel_emp)`**.
+- Correlação entre $\hat\theta$ e escore bruto: **`r sprintf("%.3f", cor(theta, dt$escore))`**
+  (Spearman = `r sprintf("%.3f", cor(theta, dt$escore, method = "spearman"))`).
+- O EP é **menor no centro-alto** da escala e maior nos extremos — coerente com a curva
+  de informação.
+:::
+:::
+::::
+
+## Como o traço se traduz em padrões de resposta {.smaller}
+
+```{r}
+#| label: tab-padroes
+padroes <- dt |>
+  mutate(pat = apply(wirs5, 1, paste, collapse = "")) |>
+  count(pat, theta, ep, name = "freq") |>
+  arrange(desc(freq)) |>
+  head(8) |>
+  mutate(`%` = sprintf("%.1f", 100 * freq / n_obs),
+         theta = sprintf("%+.2f", theta), ep = sprintf("%.2f", ep))
+kable(padroes[, c("pat", "freq", "%", "theta", "ep")],
+      col.names = c("Padrão (I2 I3 I4 I5 I6)", "freq.", "%", "θ estimado", "EP"),
+      align = "lrrrr")
+```
+
+::: {.small}
+Dois padrões concentram quase metade da amostra: **não consultar por nenhum canal**
+($\hat\theta$ mais baixo da escala) e **apenas reunir grupos de trabalhadores**.
+Note que padrões com o mesmo escore bruto recebem $\hat\theta$ **diferentes** — é o efeito
+das discriminações desiguais do 2PL.
+:::
+
+## Descrição do traço estimado {.smaller}
+
+::: {.destaque}
+**O que $\hat\theta$ mede, na prática**
+:::
+
+| Faixa de $\hat\theta$ | % dos estabelecimentos | Perfil típico de consulta |
+|---|---|---|
+| $< -0{,}5$ | `r sprintf("%.0f%%", 100*mean(theta < -0.5))` | nenhum canal, ou apenas reunião de grupo |
+| $-0{,}5$ a $0{,}5$ | `r sprintf("%.0f%%", 100*mean(theta >= -0.5 & theta < 0.5))` | reunião de grupo + representação sindical interna |
+| $0{,}5$ a $1{,}5$ | `r sprintf("%.0f%%", 100*mean(theta >= 0.5 & theta < 1.5))` | acrescenta comitê consultivo permanente |
+| $> 1{,}5$ | `r sprintf("%.0f%%", 100*mean(theta >= 1.5))` | comitês ad hoc e dirigentes sindicais externos |
+
+. . .
+
+::: {.small}
+- **Distribuição assimétrica à direita** (assimetria = `r sprintf("%.2f", mean((theta - mean(theta))^3)/sd(theta)^3)`):
+  a maioria se concentra na parte baixa da escala e uma minoria institucionalizada forma a cauda.
+- **Amplitude observada**: de `r sprintf("%.2f", min(theta))` a `r sprintf("%.2f", max(theta))`
+  — pouco mais de `r sprintf("%.1f", diff(range(theta)))` desvios-padrão da distribuição a priori.
+- **Desvio-padrão dos escores** = `r sprintf("%.2f", sd(theta))` $< 1$: efeito do encolhimento
+  do EAP, esperado quando a confiabilidade é moderada (`r sprintf("%.2f", rel_emp)`).
+- A escala **ordena bem** os estabelecimentos no alto da distribuição, mas **não distingue**
+  os `r sprintf("%.0f%%", 100*n_zeros/n_obs)` que não usaram nenhum canal.
+:::
+
+## Validação: o traço reproduz os dados? {.smaller}
+
+```{r}
+#| label: plot-obsesp
+#| fig-height: 3.4
+esp <- sapply(0:5, function(k) {
+  # probabilidade marginal do escore total k sob o modelo 2PL (quadratura)
+  nodes <- seq(-5, 5, length.out = 121); w <- dnorm(nodes); w <- w / sum(w)
+  pk <- sapply(nodes, function(th) {
+    p <- plogis(cf[, "Dscrmn"] * (th - cf[, "Dffclt"]))
+    poly <- 1
+    for (i in seq_along(p)) poly <- c(poly * (1 - p[i]), 0) + c(0, poly * p[i])
+    poly[k + 1]
+  })
+  sum(pk * w) * n_obs
+})
+obs <- as.numeric(table(factor(rowSums(wirs5), levels = 0:5)))
+data.frame(escore = rep(0:5, 2),
+           n = c(obs, esp),
+           tipo = rep(c("observado", "esperado (2PL)"), each = 6)) |>
+  ggplot(aes(factor(escore), n, fill = tipo)) +
+  geom_col(position = "dodge", alpha = 0.85) +
+  scale_fill_manual(values = c("observado" = cor_principal, "esperado (2PL)" = cor_destaque)) +
+  labs(title = "Distribuição do escore bruto: observada vs. esperada sob o modelo",
+       x = "nº de canais utilizados", y = "estabelecimentos")
+```
+
+```{r}
+#| label: boot-gof
+X2_obs <- sum((obs - esp)^2 / esp)
+B_gof <- 500
+X2_boot <- replicate(B_gof, {
+  th <- rnorm(n_obs)
+  P <- plogis(outer(th, cf[, "Dscrmn"]) -
+                matrix(cf[, "Dffclt"] * cf[, "Dscrmn"], n_obs, nrow(cf), byrow = TRUE))
+  sim <- matrix(rbinom(length(P), 1, P), n_obs, nrow(cf))
+  o <- as.numeric(table(factor(rowSums(sim), levels = 0:5)))
+  sum((o - esp)^2 / esp)
+})
+p_gof <- mean(X2_boot >= X2_obs)
+```
+
+::: {.small}
+As frequências preditas pelo 2PL acompanham as observadas em toda a faixa do escore.
+Reamostragem paramétrica com os parâmetros fixos nas estimativas ($B = `r B_gof`$):
+$X^2_{obs} = `r sprintf("%.1f", X2_obs)`$, valor-p = **`r sprintf("%.3f", p_gof)`** — **não há
+evidência, a 5%, de discrepância** entre a distribuição observada e a predita. Como o
+procedimento ignora a incerteza de estimação dos parâmetros, o valor-p é uma cota inferior.
+:::
+
+## Conclusões {.smaller}
+
+::: {.destaque}
+1. O traço latente medido pelo WIRS é o **grau de institucionalização da consulta**
+   aos trabalhadores diante de mudança tecnológica.
+2. Os seis itens **não são unidimensionais**: I1 (conversa informal individual) forma um
+   contraste com os canais coletivos e foi excluído com base em análise fatorial,
+   dependência local ($LD\,\chi^2 = `r sprintf("%.0f", max(lower$v))`$), alfa e ajuste absoluto.
+3. Entre os itens I2–I6, o **modelo 2PL** é o escolhido: vence Rasch/1PL por TRV e por AIC/BIC,
+   e supera o 3PL em parcimônia, estabilidade e interpretabilidade.
+4. Os escores **EAP** posicionam os `r n_obs` estabelecimentos numa escala que vai da
+   ausência de consulta à negociação com dirigentes sindicais externos.
+:::
+
+::: {.small}
+**Limitações** — confiabilidade moderada (`r sprintf("%.2f", rel_emp)`) com apenas 5 itens
+dicotômicos; a escala é pouco informativa na faixa baixa de $\theta$; e os dados são de 1990,
+de modo que a interpretação é histórica.
+:::
+
+## Referências {.smaller}
+
+::: {.small}
+- **Bartholomew, D. J.** (1998). Scaling unobservable constructs in social science.
+  *Journal of the Royal Statistical Society C (Applied Statistics)*, 47(1), 1–13.
+- **Bartholomew, D. J., Steele, F., Moustaki, I. & Galbraith, J.** (2002).
+  *The Analysis and Interpretation of Multivariate Data for Social Scientists*. Chapman & Hall.
+- **Chalmers, R. P.** (2012). mirt: A multidimensional item response theory package for the
+  R environment. *Journal of Statistical Software*, 48(6), 1–29.
+- **Chen, W.-H. & Thissen, D.** (1997). Local dependence indexes for item pairs using item
+  response theory. *Journal of Educational and Behavioral Statistics*, 22(3), 265–289.
+- **Maydeu-Olivares, A. & Joe, H.** (2006). Limited information goodness-of-fit testing in
+  multidimensional contingency tables. *Psychometrika*, 71(4), 713–732.
+- **Orlando, M. & Thissen, D.** (2000). Likelihood-based item-fit indices for dichotomous
+  item response theory models. *Applied Psychological Measurement*, 24(1), 50–64.
+- **Rizopoulos, D.** (2006). ltm: An R package for latent variable modeling and item response
+  theory analyses. *Journal of Statistical Software*, 17(5), 1–25.
+:::
+
+# Obrigado! {background-color="#0d3b66"}
+
+::: {.small}
+Código, dados e apresentação reproduzíveis em Quarto + R:
+`apresentacao.qmd` · `dados/WIRS.csv`
+:::

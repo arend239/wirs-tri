@@ -1,0 +1,69 @@
+/*-- scss:defaults --*/
+
+$font-family-sans-serif: "Source Sans Pro", "Helvetica Neue", Helvetica, sans-serif !default;
+$presentation-heading-font: "Source Sans Pro", "Helvetica Neue", Helvetica, sans-serif !default;
+
+$body-bg: #fdfdfb !default;
+$body-color: #1f2328 !default;
+$link-color: #0b6b5e !default;
+$presentation-heading-color: #0d3b66 !default;
+$code-block-bg: #f5f6f7 !default;
+
+$presentation-font-size-root: 30px !default;
+$presentation-h1-font-size: 1.9em !default;
+$presentation-h2-font-size: 1.25em !default;
+$presentation-h3-font-size: 1.05em !default;
+
+/*-- scss:rules --*/
+
+.reveal .slide-number {
+  background-color: transparent;
+  color: #8a8f98;
+}
+
+.reveal h2 {
+  border-bottom: 2px solid #e2e6ea;
+  padding-bottom: .15em;
+  margin-bottom: .5em;
+}
+
+.reveal .destaque {
+  background: #eef5f3;
+  border-left: 5px solid #0b6b5e;
+  padding: .5em .8em;
+  border-radius: 3px;
+}
+
+.reveal .alerta {
+  background: #fdf1ef;
+  border-left: 5px solid #c0392b;
+  padding: .5em .8em;
+  border-radius: 3px;
+}
+
+.reveal table {
+  font-size: .78em;
+}
+
+.reveal .small {
+  font-size: .78em;
+}
+
+.reveal .smaller {
+  font-size: .66em;
+}
+
+.reveal .rodape-fonte {
+  font-size: .55em;
+  color: #6b7280;
+  margin-top: .8em;
+}
+
+.reveal section img {
+  border: none;
+  box-shadow: none;
+}
+
+.reveal .title-slide h1 {
+  font-size: 1.7em;
+}
