@@ -1,7 +1,7 @@
 # Calibração TRI do banco WIRS
 
 Trabalho de avaliação da disciplina **MAT02012 — Tópicos Avançados em Estatística IV**
-(Teoria de Resposta ao Item), UFRGS, 2026/2. Prof. Fernando Hepp Pulgati.
+(Teoria de Resposta ao Item), UFRGS, 2026/2. Prof. Stela.
 
 ## Objetivo
 
