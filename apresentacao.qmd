@@ -173,7 +173,7 @@ kable(tab, format = "html", align = rep(c("l", "r"), 4), escape = FALSE,
 ::: {.small}
 Cada padrão lista as respostas na ordem **I1 I2 I3 I4 I5 I6**; leitura por coluna, com os
 padrões em ordem crescente. Dos 64 possíveis, **`r sum(todos$freq > 0)`
-foram observados** — e os quatro destacados concentram `r pct(100 * sum(todos$freq[todos$freq >= 50]) / n_obs, 0)`
+foram observados** e os quatro destacados concentram `r pct(100 * sum(todos$freq[todos$freq >= 50]) / n_obs, 0)`
 da amostra.
 :::
 
@@ -188,20 +188,22 @@ $\theta$ = **grau de institucionalização da consulta aos trabalhadores** diant
 mudança tecnológica no estabelecimento.
 :::
 
-- Não é "quanta consulta existe", e sim **por quais canais** ela acontece.
 - Valores **baixos** de $\theta$: a consulta, quando ocorre, se dá por canais diretos e
-  informais — ou simplesmente não ocorre.
-- Valores **altos** de $\theta$: o estabelecimento aciona **estruturas coletivas
-  permanentes** — comitês consultivos e representação sindical, interna e externa.
+  informais.
+- Valores **altos** de $\theta$: o estabelecimento aciona **estruturas coletivas** (comitês, sindicatos) para consultas e discussões.
 
-. . .
+<!-- . . . -->
 
 **Por que um traço latente e não o escore bruto?**
 
-- Os canais têm "custos" institucionais diferentes: usar um comitê consultivo permanente
-  diz mais sobre o estabelecimento do que uma conversa de corredor.
-- A TRI pondera cada item pela sua **dificuldade** e pelo seu **poder de discriminação**,
-  em vez de somar respostas como se todas valessem o mesmo.
+- **Contar canais trata todos como iguais.** Quem só reuniu grupos de trabalhadores e quem
+  só negociou com o sindicato somam 1 ponto cada — mas não estão no mesmo ponto da escala.
+- **Cada canal custa uma coisa.** Manter um comitê consultivo permanente exige estrutura;
+  uma conversa de corredor, não. O peso de cada canal tem que sair dos dados.
+- **É isso que a TRI estima.** Cada item ganha uma **dificuldade** (o quanto aquele canal é
+  exigente) e uma **discriminação** (o quanto ele separa quem institucionaliza de quem não).
+- **E a medida vem com incerteza.** O modelo diz onde cada estabelecimento está e *o quanto
+  se pode confiar* nessa posição — o escore bruto não diz nada sobre isso.
 
 ## Modelos candidatos {.smaller}
 
