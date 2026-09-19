@@ -67,3 +67,23 @@ $presentation-h3-font-size: 1.05em !default;
 .reveal .title-slide h1 {
   font-size: 1.7em;
 }
+
+.reveal table.tab-padroes {
+  width: auto;
+  margin: 0 auto;
+  border-collapse: collapse;
+}
+
+.reveal table.tab-padroes th,
+.reveal table.tab-padroes td {
+  padding: .12em .55em;
+  border: none;
+}
+
+.reveal table.tab-padroes thead th {
+  border-bottom: 1px solid #c9ced6;
+}
+
+.reveal table.tab-padroes tbody tr {
+  border-bottom: 1px solid #edeff2;
+}

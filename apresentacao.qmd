@@ -158,20 +158,25 @@ todos$k <- rowSums(todos[, 1:6])
 todos$val <- strtoi(todos$pat, base = 2)
 todos <- todos[order(todos$k, todos$val), ]
 
-marca <- function(x) ifelse(x >= 50, paste0("<b>", x, "</b>"), as.character(x))
+realce <- function(txt, quando) {
+  ifelse(quando,
+         paste0("<span style='color:", cor_destaque, ";'>", txt, "</span>"),
+         as.character(txt))
+}
 bloco <- split(todos, rep(1:4, each = 16))
 tab <- do.call(cbind, lapply(bloco, function(b)
-  data.frame(Padrão = b$pat, n = marca(b$freq))))
+  data.frame(Padrão = realce(b$pat, b$freq >= 50),
+             n      = realce(b$freq, b$freq >= 50))))
 names(tab) <- rep(c("Padrão", "n"), 4)
-kable(tab, align = rep(c("l", "r"), 4), escape = FALSE, row.names = FALSE)
+kable(tab, format = "html", align = rep(c("l", "r"), 4), escape = FALSE,
+      row.names = FALSE, table.attr = "class='tab-padroes'")
 ```
 
 ::: {.small}
 Cada padrão lista as respostas na ordem **I1 I2 I3 I4 I5 I6**; leitura por coluna, em ordem
 crescente do número de canais usados. Dos 64 padrões possíveis, **`r sum(todos$freq > 0)`
-foram observados** — e os quatro em negrito concentram `r pct(100 * sum(todos$freq[todos$freq >= 50]) / n_obs, 0)`
-da amostra. Tabela esparsa como esta é o motivo de usarmos $M_2$, de margens limitadas,
-em vez do $\chi^2$ sobre os `r nrow(todos)` padrões.
+foram observados** — e os quatro destacados concentram `r pct(100 * sum(todos$freq[todos$freq >= 50]) / n_obs, 0)`
+da amostra.
 :::
 
 ::: {.rodape-fonte}
