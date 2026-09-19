@@ -154,13 +154,11 @@ names(todos) <- paste0("I", 1:6)
 todos$pat <- apply(todos, 1, paste, collapse = "")
 obs_pat <- table(apply(wirs, 1, paste, collapse = ""))
 todos$freq <- as.integer(obs_pat[todos$pat]); todos$freq[is.na(todos$freq)] <- 0L
-todos$k <- rowSums(todos[, 1:6])
-todos$val <- strtoi(todos$pat, base = 2)
-todos <- todos[order(todos$k, todos$val), ]
+todos <- todos[order(todos$pat), ]
 
 realce <- function(txt, quando) {
   ifelse(quando,
-         paste0("<span style='color:", cor_destaque, ";'>", txt, "</span>"),
+         paste0("<span style='color:", cor_alerta, ";'>", txt, "</span>"),
          as.character(txt))
 }
 bloco <- split(todos, rep(1:4, each = 16))
@@ -173,8 +171,8 @@ kable(tab, format = "html", align = rep(c("l", "r"), 4), escape = FALSE,
 ```
 
 ::: {.small}
-Cada padrão lista as respostas na ordem **I1 I2 I3 I4 I5 I6**; leitura por coluna, em ordem
-crescente do número de canais usados. Dos 64 padrões possíveis, **`r sum(todos$freq > 0)`
+Cada padrão lista as respostas na ordem **I1 I2 I3 I4 I5 I6**; leitura por coluna, com os
+padrões em ordem crescente. Dos 64 possíveis, **`r sum(todos$freq > 0)`
 foram observados** — e os quatro destacados concentram `r pct(100 * sum(todos$freq[todos$freq >= 50]) / n_obs, 0)`
 da amostra.
 :::
