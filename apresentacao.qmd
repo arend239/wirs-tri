@@ -101,6 +101,16 @@ wirs5 <- wirs[, -1]
 itens_txt5   <- itens_txt[-1]
 itens_curto5 <- itens_curto[-1]
 n_obs <- nrow(wirs)
+
+# ---- padroes de resposta observados --------------------------------------
+todos <- expand.grid(rep(list(c(0, 1)), 6))[, 6:1]          # I1 … I6
+names(todos) <- paste0("I", 1:6)
+todos$pat  <- apply(todos, 1, paste, collapse = "")
+obs_pat    <- table(apply(wirs, 1, paste, collapse = ""))
+todos$freq <- as.integer(obs_pat[todos$pat]); todos$freq[is.na(todos$freq)] <- 0L
+todos      <- todos[order(todos$pat), ]
+n_pat_obs  <- sum(todos$freq > 0)
+pct_top4   <- 100 * sum(todos$freq[todos$freq >= 50]) / n_obs
 ```
 
 <!-- ## O banco de dados {.smaller} -->
@@ -145,12 +155,16 @@ data.frame(
 
 ::: {.small}
 Os canais vão do **mais informal e individual** (I1) ao **mais formal e sindicalizado** (I6).
+Dos 64 padrões de resposta possíveis, **`r n_pat_obs` foram observados**, e apenas quatro
+deles concentram `r pct(pct_top4, 0)` da amostra.
 :::
+
 
 ## Os dados brutos: os 64 padrões de resposta {.smaller}
 
 ```{r}
 #| label: tab-padroes-completa
+
 todos <- expand.grid(rep(list(c(0, 1)), 6))[, 6:1]          # I1 … I6
 names(todos) <- paste0("I", 1:6)
 todos$pat <- apply(todos, 1, paste, collapse = "")
@@ -173,11 +187,9 @@ kable(tab, format = "html", align = rep(c("l", "r"), 4), escape = FALSE,
 ```
 
 ::: {.small .legenda-centro}
-Dos 64 possíveis, **`r sum(todos$freq > 0)`
-foram observados** e os quatro destacados concentram `r pct(100 * sum(todos$freq[todos$freq >= 50]) / n_obs, 0)`
-da amostra.
+Dos 64 possíveis, **`r n_pat_obs` foram observados** e os quatro destacados concentram
+`r pct(pct_top4, 0)` da amostra.
 :::
-
 
 ## Definição do traço latente
 
@@ -207,31 +219,44 @@ mudança tecnológica no estabelecimento.
 
 ## Modelos candidatos
 
-Para resposta dicotômica $U_{ij} \in \{0,1\}$ do estabelecimento $j$ ao item $i$:
+Para resposta dicotômica $X_{ij} \in \{0,1\}$ do estabelecimento $j$ ao item $i$:
 
-$$P(U_{ij} = 1 \mid \theta_j) = c_i + (1 - c_i)\,\frac{1}{1 + e^{-a_i(\theta_j - b_i)}}$$
+$$P(X_{ij} = 1 \mid \theta_j) = c_i + (1 - c_i)\,\frac{1}{1 + e^{-D a_i(\theta_j - b_i)}}$$
+
+::: {.small}
+$D$ é um fator de escala constante, igual a 1; usa-se 1,7 quando se deseja que a
+função logística forneça resultados semelhantes aos da ogiva normal.
+:::
 
 <!-- ::: {.small} -->
 | Modelo | Restrição | Parâmetros por item | Leitura |
 |---|---|---|---|
-| **Rasch** | $a_i = 1$, $c_i = 0$ | $b_i$ | itens diferem só em dificuldade |
-| **1PL** | $a_i = a$, $c_i = 0$ | $b_i$ (+ um $a$ comum) | discriminação comum estimada |
+| **1PL / Rasch** | $a_i = a$, $c_i = 0$ | $b_i$ | itens diferem só em dificuldade |
 | **2PL** | $c_i = 0$ | $a_i, b_i$ | itens discriminam de forma distinta |
 | **3PL** | — | $a_i, b_i, c_i$ | acrescenta "acerto ao acaso" |
 <!-- ::: -->
-
-::: {.destaque .small}
-comparamos ajuste por razão de verossimilhança,
-critérios de informação e medidas de ajuste absoluto.
-:::
 
 ## Pressupostos a verificar antes de calibrar
 
 ::: {.small}
 1. **Unidimensionalidade** — um único $\theta$ explica a associação entre os itens.
 2. **Independência local** — dadas as respostas condicionadas a $\theta$, os itens são independentes.
-3. **Monotonicidade** — $P(U_i = 1 \mid \theta)$ é crescente em $\theta$.
+3. **Monotonicidade** — $P(X_i = 1 \mid \theta)$ é crescente em $\theta$.
 :::
+
+```{r}
+#| label: monotonia
+# proporcao de uso de cada item por escore dos DEMAIS itens (rest-score):
+# se o traco e monotono, essa proporcao nao deve decrescer
+min_diff <- function(dados) {
+  sapply(seq_len(ncol(dados)), function(i) {
+    p <- tapply(dados[[i]], rowSums(dados[, -i]), mean)
+    min(diff(p))                    # menor variacao entre faixas consecutivas
+  })
+}
+mono6 <- min_diff(wirs)
+mono5 <- min_diff(wirs5)
+```
 
 ```{r}
 #| label: plot-tetra
@@ -259,7 +284,42 @@ ggplot(tet_df, aes(j, i, fill = r)) +
   theme(legend.position = "right", panel.grid = element_blank())
 ```
 
-## Evidência 1 — análise fatorial exploratória {.smaller}
+::: {.small}
+**Monotonicidade** (proporção de uso de cada item por escore dos demais): no conjunto
+de seis, **`r sum(mono6 < -0.02)` dos 6 itens** apresentam trechos **decrescentes** —
+o pior recua `r fmt(abs(100 * min(mono6)), 0)` p.p. Retirando I1, a proporção passa a ser
+**crescente em todos os cinco itens** (menor variação = `r fmt(min(mono5), 3)`).
+:::
+
+## Evidência 1 — autovalores da matriz tetracórica {.smaller}
+
+```{r}
+#| label: autovalores
+av6 <- eigen(tet)$values
+tet5 <- polycor::hetcor(as.data.frame(lapply(wirs5, factor)), ML = FALSE,
+                        std.err = FALSE)$correlations
+av5 <- eigen(tet5)$values
+
+data.frame(
+  Fator = 1:6,
+  `Autovalor (6 itens)` = fmt(av6, 2),
+  `% explicada` = pct(100 * av6 / sum(av6), 1),
+  `Autovalor (5 itens)` = c(fmt(av5, 2), "—"),
+  `% explicada ` = c(pct(100 * av5 / sum(av5), 1), "—"),
+  check.names = FALSE
+) |> kable(align = "lrrrr")
+```
+
+::: {.small}
+Procedimento da aula: matriz de correlação **tetracórica** (variáveis binárias) $\to$
+autovalores $\to$ proporção de explicação.
+Com os seis itens há **dois autovalores acima de 1** (`r fmt(av6[1], 2)` e
+`r fmt(av6[2], 2)`): o segundo fator carrega `r pct(100 * av6[2] / sum(av6), 0)` da
+variância — não é ruído. Sem I1, o segundo autovalor cai para `r fmt(av5[2], 2)`,
+no limiar, e o primeiro fator passa a explicar `r pct(100 * av5[1] / sum(av5), 0)`.
+:::
+
+## Evidência 2 — análise fatorial exploratória {.smaller}
 
 ```{r}
 #| label: efa
@@ -282,7 +342,7 @@ reunião de grupo (I2, $\lambda = `r fmtm(cargas[2,2], 2)`$) — são canais
 **substitutos**, não manifestações do mesmo traço. O Fator 1 reúne I3–I6.
 :::
 
-## Evidência 2 — análise paralela e consistência {.smaller}
+## Evidência 3 — análise paralela e consistência {.smaller}
 
 :::: {.columns}
 ::: {.column width="52%"}
@@ -313,13 +373,42 @@ data.frame(
 ```
 
 ::: {.smaller}
-O alfa **sobe** ao remover I1 e a correlação bisserial de I1 com o escore dos demais
-itens é **negativa**: I1 puxa contra o construto.
+O alfa **sobe** ao remover I1 (`r fmt(desc6$alpha[1,1], 3)` $\to$
+`r fmt(desc6$alpha[2,1], 3)`) e a bisserial de I1 é **negativa**
+(`r fmt(desc6$ExBisCorr[1], 3)`): I1 puxa contra o construto.
+O alfa também sobe sem **I2** (`r fmt(desc6$alpha[3,1], 3)`), cuja bisserial é
+praticamente nula (`r fmt(desc6$ExBisCorr[2], 3)`) — voltamos a esse item adiante.
 :::
 :::
 ::::
 
-## Evidência 3 — dependência local no modelo 2PL {.smaller}
+## E quanto a I2? {.smaller}
+
+```{r}
+#| label: prev-i2
+cf_prev <- coef(ltm(wirs5 ~ z1))    # so para citar b e a de I2 neste slide
+```
+
+::: {.destaque}
+O alfa sobe sem I2 e sua bisserial é ~0. Por que mantê-lo?
+:::
+
+::: {.small}
+- **O alfa não é o critério aqui.** Ele pressupõe itens com discriminações parecidas
+  (essencialmente $\tau$-equivalentes) — exatamente o que o 2PL rejeita. Um item de
+  discriminação baixa **sempre** derruba o alfa, mesmo sendo válido.
+- **I2 é o único item fácil da escala** ($b = `r fmtm(cf_prev["I2","Dffclt"], 2)`$,
+  o único negativo). Sem ele, todos os itens ficam acima da média da população e a
+  escala perde qualquer capacidade de discriminar na faixa baixa de $\theta$ — onde
+  está a maior parte dos estabelecimentos.
+- **Ele não viola pressuposto algum**: carga positiva no Fator 1, bisserial não
+  negativa, monotonicidade preservada, sem dependência local com os demais.
+- **Custo assumido**: discrimina pouco ($a = `r fmtm(cf_prev["I2","Dscrmn"], 2)`$)
+  e contribui pouca informação. Mostramos adiante a alternativa de 4 itens
+  (I3–I6, a de Bartholomew) — a descrição do traço **não muda**.
+:::
+
+## Evidência 4 — dependência local no modelo 2PL {.smaller}
 
 ```{r}
 #| label: ld6
@@ -329,17 +418,27 @@ ld_tab <- as.data.frame(as.table(ld6)) |>
   setNames(c("i", "j", "v")) |>
   filter(!is.na(v)) |>
   mutate(par = paste(j, "–", i))
-lower <- ld_tab |>
-  filter(match(as.character(i), paste0("I", 1:6)) > match(as.character(j), paste0("I", 1:6))) |>
-  arrange(desc(v)) |> head(5)
-kable(data.frame(Par = lower$par, `LD X²` = fmt(lower$v, 1), check.names = FALSE),
-      align = "lr")
+ld_pares <- function(m, itens) {
+  as.data.frame(as.table(residuals(m, type = "LD", verbose = FALSE))) |>
+    setNames(c("i", "j", "v")) |> filter(!is.na(v)) |>
+    filter(match(as.character(i), itens) > match(as.character(j), itens)) |>
+    mutate(par = paste(j, "–", i)) |> arrange(desc(v))
+}
+m2pl5 <- mirt(wirs5, 1, itemtype = "2PL", verbose = FALSE)
+lower  <- ld_pares(m2pl6, paste0("I", 1:6)) |> head(4)
+lower5 <- ld_pares(m2pl5, paste0("I", 2:6)) |> head(4)
+
+kable(data.frame(
+  `Par (6 itens)` = lower$par,  `LD X²` = fmt(lower$v, 1),
+  `Par (5 itens)` = lower5$par, `LD X² ` = fmt(lower5$v, 1),
+  check.names = FALSE), align = "lrlr")
 ```
 
 ::: {.small}
 Estatística $LD\,\chi^2$ de Chen & Thissen (1 g.l.): valores acima de ~10 indicam
-violação séria de independência local. O par **I1–I2** atinge
-**`r fmt(max(lower$v), 0)`** — mais de dez vezes o limiar.
+violação séria de independência local. Com os seis itens, o par **I1–I2** atinge
+**`r fmt(max(lower$v), 0)`** — mais de dez vezes o limiar — e I1 aparece também no
+segundo pior par.
 :::
 
 ::: {.alerta .small}
@@ -348,52 +447,45 @@ escala. Ele mede o **oposto** da institucionalização — quanto mais o gestor 
 conversa individual, menos aciona canais coletivos.
 :::
 
+::: {.small}
+**Após excluir I1**, o pior par cai de `r fmt(max(lower$v), 0)` para
+**`r fmt(max(lower5$v), 1)`** (`r lower5$par[1]`) — ainda ligeiramente acima do limiar,
+e é o resíduo que assumimos e declaramos nas limitações. Todos os demais pares não
+passam de `r fmt(lower5$v[2], 1)`.
+:::
+
 ## Decisão: calibrar os itens I2–I6 {.smaller}
 
-```{r}
-#| label: comp-m2
-m2pl5 <- mirt(wirs5, 1, itemtype = "2PL", verbose = FALSE)
-M2_6 <- M2(m2pl6); M2_5 <- M2(m2pl5)
-tab_m2 <- data.frame(
-  Conjunto = c("6 itens (I1–I6)", "5 itens (I2–I6)"),
-  M2 = fmt(c(M2_6$M2, M2_5$M2), 1),
-  gl = c(M2_6$df, M2_5$df),
-  p = fmt_p(c(M2_6$p, M2_5$p)),
-  RMSEA = fmt(c(M2_6$RMSEA, M2_5$RMSEA), 3),
-  SRMSR = fmt(c(M2_6$SRMSR, M2_5$SRMSR), 3),
-  TLI = fmt(c(M2_6$TLI, M2_5$TLI), 3),
-  CFI = fmt(c(M2_6$CFI, M2_5$CFI), 3)
-)
-kable(tab_m2, align = "lrrrrrrr")
-```
+::: {.destaque}
+As cinco evidências apontam na mesma direção: **I1 sai do conjunto.**
+:::
 
 ::: {.small}
-Ajuste absoluto do modelo 2PL unidimensional ($M_2$ de Maydeu-Olivares & Joe).
-Critérios usuais: RMSEA $< 0{,}06$, SRMSR $< 0{,}05$, CFI/TLI $> 0{,}90$.
+| Evidência | Com os 6 itens | Sem I1 |
+|---|---|---|
+| Autovalores (tetracórica) | 2 acima de 1 (`r fmt(av6[1], 2)`; `r fmt(av6[2], 2)`) | 2º cai para `r fmt(av5[2], 2)` |
+| Análise fatorial | Fator 2 bipolar, contrasta I1 com I2 | um único fator |
+| Análise paralela | unidimensionalidade **rejeitada** ($p$ `r fmt_p(ud6$p.value)`) | — |
+| Monotonicidade | `r sum(mono6 < -0.02)` itens com trechos decrescentes | crescente nos 5 |
+| Alfa / bisserial | bisserial de I1 = `r fmt(desc6$ExBisCorr[1], 3)` | alfa sobe para `r fmt(desc6$alpha[2,1], 3)` |
+| Dependência local | I1–I2: $LD\,\chi^2$ = `r fmt(max(lower$v), 0)` | pior par = `r fmt(max(lower5$v), 1)` |
 :::
 
 ::: {.destaque .small}
-Com I1 no conjunto o modelo unidimensional é **inaceitável**
-(RMSEA = `r fmt(M2_6$RMSEA, 3)`, CFI = `r fmt(M2_6$CFI, 2)`).
-Sem I1, o ajuste entra na faixa aceitável
-(RMSEA = `r fmt(M2_5$RMSEA, 3)`, CFI = `r fmt(M2_5$CFI, 2)`,
-SRMSR = `r fmt(M2_5$SRMSR, 3)`).
 **O traço passa a ser estimado por I2–I6.**
 :::
 
 # Calibração dos itens {background-color="#0d3b66"}
 
-## Ajuste dos quatro modelos {.smaller}
+## Ajuste dos três modelos {.smaller}
 
 ```{r}
 #| label: ajustes
 #| echo: true
-#| code-line-numbers: "|2|3|4|5"
-J <- ncol(wirs5)
-mod_rasch <- rasch(wirs5, constraint = cbind(J + 1, 1))   # a = 1 fixo
-mod_1pl   <- rasch(wirs5)                                 # a comum, estimado
-mod_2pl   <- ltm(wirs5 ~ z1)                              # a_i livres
-mod_3pl   <- tpm(wirs5, type = "latent.trait")            # acrescenta c_i
+#| code-line-numbers: "|2|3|4"
+mod_1pl <- rasch(wirs5)                             # 1PL/Rasch: a comum
+mod_2pl <- ltm(wirs5 ~ z1)                          # 2PL: a_i livres
+mod_3pl <- tpm(wirs5, type = "latent.trait")        # 3PL: acrescenta c_i
 ```
 
 ```{r}
@@ -403,25 +495,31 @@ lrt <- function(m0, m1) {
   if (a$LRT < 0) return("solução instável (máximo local)")
   paste0(fmt(a$LRT, 1), " (", a$df, " gl), p ", fmt_p(a$p.value))
 }
+mods <- list(mod_1pl, mod_2pl, mod_3pl)
 tab_mod <- data.frame(
-  Modelo = c("Rasch", "1PL", "2PL", "3PL"),
-  `log-verossimilhança` = fmt(c(logLik(mod_rasch), logLik(mod_1pl),
-                                            logLik(mod_2pl), logLik(mod_3pl)), 1),
-  `nº par.` = c(attr(logLik(mod_rasch), "df"), attr(logLik(mod_1pl), "df"),
-                attr(logLik(mod_2pl), "df"), attr(logLik(mod_3pl), "df")),
-  AIC = fmt(c(AIC(mod_rasch), AIC(mod_1pl), AIC(mod_2pl), AIC(mod_3pl)), 1),
-  BIC = fmt(c(BIC(mod_rasch), BIC(mod_1pl), BIC(mod_2pl), BIC(mod_3pl)), 1),
-  `TRV vs. modelo anterior` = c("—", lrt(mod_rasch, mod_1pl),
-                                lrt(mod_1pl, mod_2pl), lrt(mod_2pl, mod_3pl)),
+  Modelo = c("1PL / Rasch", "2PL", "3PL"),
+  `log-verossimilhança` = fmt(sapply(mods, logLik), 1),
+  `nº par.` = sapply(mods, \(m) attr(logLik(m), "df")),
+  `TRV vs. modelo anterior` = c("—", lrt(mod_1pl, mod_2pl), lrt(mod_2pl, mod_3pl)),
   check.names = FALSE
 )
-kable(tab_mod, align = "lrrrrl")
+kable(tab_mod, align = "lrrl")
 ```
 
 ::: {.small}
 Modelos encaixados, estimados por máxima verossimilhança marginal com quadratura
-de Gauss–Hermite (`ltm`). A linha do **3PL** traz a solução devolvida por `tpm()`, que
+de Gauss–Hermite (`ltm`) — mesma sequência do roteiro de aula
+(`rasch` $\to$ `ltm` $\to$ `tpm`, comparados com `anova`).
+A linha do **3PL** traz a solução devolvida por `tpm()`, que
 **não converge para um máximo válido** — ver o slide seguinte.
+:::
+
+
+::: {.small}
+Fixar $a = 1$ em vez de estimar um $a$ comum **não é um modelo distinto**: equivale a
+reparametrizar a escala de $\theta$ (aqui, $\hat a$ = `r fmt(coef(mod_1pl)[1, "Dscrmn"], 2)`,
+isto é, $\mathrm{DP}(\theta)$ = `r fmt(coef(mod_1pl)[1, "Dscrmn"], 2)` na métrica com
+$a = 1$). Por isso apresentamos um único modelo de discriminação comum.
 :::
 
 ## Leitura da comparação {.smaller}
@@ -433,8 +531,11 @@ cmp3 <- anova(m2pl5, m3pl5, verbose = FALSE)
 ```
 
 ::: {.destaque}
-**Rasch $\to$ 1PL $\to$ 2PL:** cada passo melhora significativamente a verossimilhança e
-**AIC e BIC caem juntos** — os itens de fato discriminam de maneira diferente.
+**1PL/Rasch $\to$ 2PL:** o ganho é inequívoco — TRV = `r fmt(suppressWarnings(anova(mod_1pl, mod_2pl))$LRT, 1)`
+(`r suppressWarnings(anova(mod_1pl, mod_2pl))$df` gl), p `r fmt_p(suppressWarnings(anova(mod_1pl, mod_2pl))$p.value)`.
+Os itens discriminam de maneira genuinamente diferente:
+$a$ vai de `r fmt(min(coef(mod_2pl)[, "Dscrmn"]), 2)` (I2) a
+`r fmt(max(coef(mod_2pl)[, "Dscrmn"]), 2)` (I5).
 :::
 
 ::: {.alerta}
@@ -442,54 +543,45 @@ cmp3 <- anova(m2pl5, m3pl5, verbose = FALSE)
 ótimo não é positiva definida e a log-verossimilhança fica **abaixo** da do 2PL
 (máximo local). Reestimando por EM no `mirt`, o 3PL converge
 ($\ell = `r fmtm(cmp3$logLik[2], 1)`$; TRV = `r fmt(cmp3$X2[2], 1)`,
-`r cmp3$df[2]` gl), mas o **BIC piora**
-(`r fmt(cmp3$BIC[1], 1)` $\to$ `r fmt(cmp3$BIC[2], 1)`).
+`r cmp3$df[2]` gl), **mas o ganho não se sustenta** — ver abaixo.
 :::
 
 ```{r}
 #| label: coef3pl
 c3 <- coef(mod_3pl)
-data.frame(
-  Item = rownames(c3), Canal = itens_curto5,
-  `c (acaso)` = fmt(c3[, 1], 3),
-  `b (dificuldade)` = fmt(c3[, 2], 2),
-  `a (discriminação)` = fmt(c3[, 3], 2),
-  check.names = FALSE
-) |> kable(align = "llrrr")
+par3 <- coef(m3pl5, IRTpars = TRUE, simplify = TRUE)$items
 ```
 
 ::: {.small}
-Estimativas do 3PL no `ltm`: as discriminações explodem (até $a = `r fmtm(max(c3[, 3]), 1)`$)
-para acomodar um $c_i$ que **não tem sentido substantivo aqui** — não se "acerta ao acaso" a
-existência de um comitê consultivo. No `mirt` o quadro se repete: $c$ = `r fmt(coef(m3pl5, IRTpars = TRUE, simplify = TRUE)$items["I2","g"], 2)`
-para I2 e $a$ = `r fmt(max(coef(m3pl5, IRTpars = TRUE, simplify = TRUE)$items[,"a"]), 1)` para I4.
+Em ambos os pacotes as **discriminações explodem** para acomodar um $c_i$ que não tem
+sentido substantivo aqui — não se "acerta ao acaso" a existência de um comitê
+consultivo: $a$ chega a `r fmt(max(c3[, 3]), 1)` no `ltm` e a
+`r fmt(max(par3[, "a"]), 1)` no `mirt`, com $c$ = `r fmt(par3["I2", "g"], 2)` para I2.
 **O parâmetro de acaso não é identificável com cinco itens dicotômicos.**
 :::
 
 ## Modelo escolhido: 2PL com cinco itens {.smaller}
 
-$$P(U_{ij} = 1 \mid \theta_j) = \frac{1}{1 + \exp\{-a_i(\theta_j - b_i)\}}, \qquad \theta_j \sim N(0,1)$$
+$$P(X_{ij} = 1 \mid \theta_j) = \frac{1}{1 + \exp\{-a_i(\theta_j - b_i)\}}, \qquad \theta_j \sim N(0,1)$$
 
 ::: {.destaque .small}
-**Justificativa estatística, em quatro linhas de evidência:**
+**Justificativa estatística, em três linhas de evidência:**
 
-1. **TRV**: 2PL supera 1PL/Rasch (`r lrt(mod_1pl, mod_2pl)`); as discriminações variam de fato.
-2. **Critérios de informação**: 2PL tem o menor **BIC** entre os quatro modelos.
-3. **Ajuste absoluto**: $M_2$ = `r fmt(M2_5$M2, 1)` (`r M2_5$df` gl), RMSEA = `r fmt(M2_5$RMSEA, 3)`, SRMSR = `r fmt(M2_5$SRMSR, 3)`, CFI = `r fmt(M2_5$CFI, 3)`.
-4. **Parcimônia identificável**: o 3PL acrescenta parâmetros sem significado no contexto e não converge de forma estável.
+1. **TRV contra o modelo mais simples**: o 2PL supera o 1PL/Rasch
+   (`r lrt(mod_1pl, mod_2pl)`) — as discriminações variam de fato, e restringi-las a um
+   valor comum custa ajuste de forma significativa.
+2. **TRV contra o modelo mais complexo**: o 3PL não se sustenta — no `ltm` nem converge
+   para um máximo válido, e a estimação alternativa produz $a$ e $c$ sem sentido
+   substantivo.
+3. **Parcimônia identificável**: com cinco itens dicotômicos, o parâmetro de acaso não é
+   identificável; o 2PL é o modelo mais complexo que os dados sustentam.
 :::
 
-```{r}
-#| label: itemfit
-if_5 <- itemfit(m2pl5)
-ifit_ltm <- item.fit(mod_2pl, G = 6, simulate.p.value = TRUE, B = 100)
-```
-
 ::: {.small}
-**Ajuste por item** ($S\text{-}X^2$ de Orlando & Thissen): nenhum dos cinco itens é
-rejeitado ao nível de 1% (menor $p$ = `r fmt(min(if_5$p.S_X2), 3)`).
-O teste $\chi^2$ com valor-p por Monte Carlo (`item.fit`, `ltm`) leva à mesma conclusão
-(menor $p$ = `r fmt(min(ifit_ltm$p.values), 3)`).
+Os pressupostos foram verificados antes da calibração: unidimensionalidade
+(autovalores, análise fatorial, análise paralela), monotonicidade e independência
+local — todos satisfeitos no conjunto I2–I6, com a ressalva já declarada do par
+`r lower5$par[1]`.
 :::
 
 ## Parâmetros calibrados {.smaller}
@@ -542,7 +634,7 @@ ggplot(cci, aes(theta, p, colour = item)) +
   labs(title = "Probabilidade de usar cada canal de consulta",
        subtitle = "Pontos marcam a dificuldade b_i (probabilidade de 50%)",
        x = expression(theta ~ "(institucionalização da consulta)"),
-       y = expression(P(U[i] == 1 ~ "|" ~ theta))) +
+       y = expression(P(X[i] == 1 ~ "|" ~ theta))) +
   guides(colour = guide_legend(nrow = 2))
 ```
 
@@ -583,11 +675,20 @@ g2 <- ggplot(info_tot, aes(theta)) +
 g1 + g2
 ```
 
+```{r}
+#| label: info-intervalo
+info_04  <- information(mod_2pl, c(0, 4))       # funcao da aula
+info_m40 <- information(mod_2pl, c(-4, 0))
+prop_alto <- 100 * info_04$InfoRange / (info_04$InfoRange + info_m40$InfoRange)
+```
+
 ::: {.small}
 A escala é **mais precisa entre $\theta \approx `r fmtm(info_tot$theta[which.max(info_tot$I)] - 1, 1)`$ e
 $`r fmtm(info_tot$theta[which.max(info_tot$I)] + 1, 1)`$** (máximo de informação em
 $\theta = `r fmtm(info_tot$theta[which.max(info_tot$I)], 2)`$) — ou seja, discrimina bem
 entre estabelecimentos de institucionalização média e alta, e mal na parte baixa da escala.
+Quantificando com `information()`: **`r pct(prop_alto, 0)` da informação do teste em
+$[-4, 4]$ está acima de $\theta = 0$**.
 :::
 
 # Estimação do traço latente {background-color="#0d3b66"}
@@ -737,7 +838,9 @@ kable(faixas, align = "lrrr")
 :::
 ::: {.column width="48%"}
 ::: {.small}
-- **Confiabilidade empírica** (marginal): **`r fmt(rel_emp, 3)`**.
+- **Confiabilidade empírica** (marginal): **`r fmt(rel_emp, 3)`** — **baixa**.
+  Abaixo de 0,70, o patamar usual para decisões sobre **casos individuais**: a escala
+  serve para descrever e comparar **grupos**, não para classificar um estabelecimento.
 - Correlação entre $\hat\theta$ e escore bruto: **`r fmt(cor(theta, dt$escore), 3)`**
   (Spearman = `r fmt(cor(theta, dt$escore, method = "spearman"), 3)`).
 - O EP é **menor no centro-alto** da escala e maior nos extremos — coerente com a curva
@@ -750,17 +853,23 @@ kable(faixas, align = "lrrr")
 
 ```{r}
 #| label: tab-padroes
+# mudanca de escala: media 50, desvio-padrao 10 (escala de leitura direta)
+escala <- function(z) 50 + 10 * z
+dt$escala <- escala(dt$theta)
+
 padroes <- dt |>
   mutate(pat = apply(wirs5, 1, paste, collapse = "")) |>
   count(pat, theta, ep, name = "freq") |>
   arrange(desc(freq)) |>
   head(8) |>
   mutate(`%` = fmt(100 * freq / n_obs, 1),
+         esc = fmt(escala(theta), 1),
          theta = fmt(ifelse(abs(theta) < 5e-3, 0, theta), 2, TRUE),
          ep = fmt(ep, 2))
-kable(padroes[, c("pat", "freq", "%", "theta", "ep")],
-      col.names = c("Padrão (I2 I3 I4 I5 I6)", "freq.", "%", "θ estimado", "EP"),
-      align = "lrrrr")
+kable(padroes[, c("pat", "freq", "%", "theta", "ep", "esc")],
+      col.names = c("Padrão (I2 I3 I4 I5 I6)", "freq.", "%", "θ estimado", "EP",
+                    "Escala (50 ± 10)"),
+      align = "lrrrrr")
 ```
 
 ::: {.small}
@@ -768,6 +877,12 @@ Dois padrões concentram quase metade da amostra: **não consultar por nenhum ca
 ($\hat\theta$ mais baixo da escala) e **apenas reunir grupos de trabalhadores**.
 Note que padrões com o mesmo escore bruto recebem $\hat\theta$ **diferentes** — é o efeito
 das discriminações desiguais do 2PL.
+:::
+
+::: {.small}
+A última coluna aplica a **mudança de escala** usual, $50 + 10\,\hat\theta$, que evita
+valores negativos e torna a leitura direta: a amostra vai de
+`r fmt(escala(min(theta)), 0)` a `r fmt(escala(max(theta)), 0)` pontos.
 :::
 
 ## Descrição do traço estimado {.smaller}
@@ -796,83 +911,30 @@ das discriminações desiguais do 2PL.
   os `r pct(100*n_zeros/n_obs, 0)` que não usaram nenhum canal.
 :::
 
-## Validação: o traço reproduz os dados? {.smaller}
-
-```{r}
-#| label: plot-obsesp
-#| fig-height: 3.4
-esp <- sapply(0:5, function(k) {
-  # probabilidade marginal do escore total k sob o modelo 2PL (quadratura)
-  nodes <- seq(-5, 5, length.out = 121); w <- dnorm(nodes); w <- w / sum(w)
-  pk <- sapply(nodes, function(th) {
-    p <- plogis(cf[, "Dscrmn"] * (th - cf[, "Dffclt"]))
-    poly <- 1
-    for (i in seq_along(p)) poly <- c(poly * (1 - p[i]), 0) + c(0, poly * p[i])
-    poly[k + 1]
-  })
-  sum(pk * w) * n_obs
-})
-obs <- as.numeric(table(factor(rowSums(wirs5), levels = 0:5)))
-data.frame(escore = rep(0:5, 2),
-           n = c(obs, esp),
-           tipo = rep(c("observado", "esperado (2PL)"), each = 6)) |>
-  ggplot(aes(factor(escore), n, fill = tipo)) +
-  geom_col(position = "dodge", alpha = 0.85) +
-  scale_fill_manual(values = c("observado" = cor_principal, "esperado (2PL)" = cor_destaque)) +
-  labs(title = "Distribuição do escore bruto: observada vs. esperada sob o modelo",
-       x = "nº de canais utilizados", y = "estabelecimentos")
-```
-
-```{r}
-#| label: boot-gof
-X2_obs <- sum((obs - esp)^2 / esp)
-B_gof <- 500
-X2_boot <- replicate(B_gof, {
-  th <- rnorm(n_obs)
-  P <- plogis(outer(th, cf[, "Dscrmn"]) -
-                matrix(cf[, "Dffclt"] * cf[, "Dscrmn"], n_obs, nrow(cf), byrow = TRUE))
-  sim <- matrix(rbinom(length(P), 1, P), n_obs, nrow(cf))
-  o <- as.numeric(table(factor(rowSums(sim), levels = 0:5)))
-  sum((o - esp)^2 / esp)
-})
-p_gof <- mean(X2_boot >= X2_obs)
-```
-
-::: {.small}
-As frequências preditas pelo 2PL acompanham as observadas em toda a faixa do escore.
-Reamostragem paramétrica com os parâmetros fixos nas estimativas ($B = `r B_gof`$):
-$X^2_{obs} = `r fmtm(X2_obs, 1)`$, valor-p = **`r fmt(p_gof, 3)`** — **não há
-evidência, a 5%, de discrepância** entre a distribuição observada e a predita. Como o
-procedimento ignora a incerteza de estimação dos parâmetros, o valor-p é uma cota inferior.
-:::
-
 ## Confronto com a fonte: Bartholomew (1998) {.smaller}
 
 ```{r}
 #| label: replica
 m4    <- ltm(wirs[, 3:6] ~ z1)
 cf4   <- coef(m4)
-mm4   <- mirt(wirs[, 3:6], 1, itemtype = "2PL", verbose = FALSE)
-M2_4  <- M2(mm4)
 th4   <- factor.scores(m4, resp.patterns = wirs[, 3:6], method = "EAP")$score.dat
 ```
 
 ::: {.smaller}
 | | Bartholomew (1998) | Nossa análise |
 |---|---|---|
-| 1 fator com os 6 itens | rejeitado: $G^2 = 269{,}4$, $X^2 = 264{,}2$ (32 gl) | rejeitado: $M_2 = `r fmtm(M2_6$M2, 1)`$ (`r M2_6$df` gl), RMSEA = `r fmt(M2_6$RMSEA, 3)` |
-| Origem do desajuste | par I1–I2: obs. 142 × esp. 221,8 para "usa ambos" | mesmo par: $LD\,\chi^2 = `r fmtm(max(lower$v), 0)`$; obs. 142 × esp. 221,8 |
+| 1 fator com os 6 itens | rejeitado: $G^2 = 269{,}4$, $X^2 = 264{,}2$ (32 gl) | rejeitado: análise paralela ($p$ `r fmt_p(ud6$p.value)`), 2 autovalores > 1 |
+| Origem do desajuste | par I1–I2: obs. 142 × esp. 221,8 para "usa ambos" | mesmo par: $LD\,\chi^2 = `r fmtm(max(lower$v), 0)`$ |
 | Item 1 | "contato informal, inerentemente impreciso e sujeito a interpretação variável" | $a \approx 0$, bisserial negativa, alfa sobe sem ele |
 | Escala final proposta | itens 3–6: "quantidade de consulta formal" | itens 2–6 (2PL): institucionalização da consulta |
-| Precisão | desvios-padrão a posteriori de 0,59 a 0,75 | EP de `r fmt(min(ep), 2)` a `r fmt(max(ep), 2)`; confiabilidade `r fmt(rel_emp, 2)` |
+| Precisão | desvios-padrão a posteriori de 0,59 a 0,75 | EP de `r fmt(min(ep), 2)` a `r fmt(max(ep), 2)` |
 :::
 
 ::: {.destaque .small}
 **Replicação exata.** Calibrando o 2PL só nos itens I3–I6, recuperamos os pesos publicados:
 a = `r paste(fmt(cf4[, "Dscrmn"], 3), collapse = " / ")` contra
-**1,77 / 0,98 / 1,97 / 1,37** publicados. Essa escala de 4 itens tem ajuste impecável
-($M_2 = `r fmtm(M2_4$M2, 2)`$, `r M2_4$df` gl, p = `r fmt(M2_4$p, 2)`)
-e $\hat\theta$ correlacionado a `r fmt(cor(th4$z1, theta), 3)` com o nosso —
+**1,77 / 0,98 / 1,97 / 1,37** publicados. E o $\hat\theta$ dessa escala de 4 itens
+está correlacionado a `r fmt(cor(th4$z1, theta), 3)` com o nosso —
 **a descrição do traço não muda**, o que a torna uma alternativa igualmente defensável.
 :::
 
@@ -882,39 +944,25 @@ e $\hat\theta$ correlacionado a `r fmt(cor(th4$z1, theta), 3)` com o nosso —
 1. O traço latente medido pelo WIRS é o **grau de institucionalização da consulta**
    aos trabalhadores diante de mudança tecnológica.
 2. Os seis itens **não são unidimensionais**: I1 (conversa informal individual) forma um
-   contraste com os canais coletivos e foi excluído com base em análise fatorial,
-   dependência local ($LD\,\chi^2 = `r fmtm(max(lower$v), 0)`$), alfa e ajuste absoluto.
-3. Entre os itens I2–I6, o **modelo 2PL** é o escolhido: vence Rasch/1PL por TRV e por AIC/BIC,
-   e supera o 3PL em parcimônia, estabilidade e interpretabilidade.
+   contraste com os canais coletivos e foi excluído com base em autovalores da matriz
+   tetracórica, análise fatorial, análise paralela, monotonicidade, alfa/bisserial e
+   dependência local ($LD\,\chi^2 = `r fmtm(max(lower$v), 0)`$).
+3. Entre os itens I2–I6, o **modelo 2PL** é o escolhido: vence o 1PL/Rasch por TRV
+   (`r lrt(mod_1pl, mod_2pl)`) e supera o 3PL em parcimônia, estabilidade e
+   identificabilidade.
 4. Os escores **EAP** posicionam os `r n_obs` estabelecimentos numa escala que vai da
    ausência de consulta à negociação com dirigentes sindicais externos.
 :::
 
 ::: {.small}
-**Limitações** — confiabilidade moderada (`r fmt(rel_emp, 2)`) com apenas 5 itens
-dicotômicos; a escala é pouco informativa na faixa baixa de $\theta$; os dados são de 1990,
+**Limitações** — confiabilidade **baixa** (`r fmt(rel_emp, 2)`, abaixo de 0,70) com apenas
+5 itens dicotômicos, o que restringe o uso a comparações entre grupos e não entre
+estabelecimentos individuais; o par `r lower5$par[1]` mantém dependência local residual
+($LD\,\chi^2 = `r fmtm(max(lower5$v), 1)`$);
+a escala é pouco informativa na faixa baixa de $\theta$; os dados são de 1990,
 de modo que a interpretação é histórica. E, como adverte Bartholomew, um modelo de
 **classes latentes** com 5 classes descreve estes dados tão bem quanto o traço contínuo:
 ajustar bem não prova que a escala "existe" — ela é um construto, julgado pela utilidade.
-:::
-
-## Referências {.smaller}
-
-::: {.small}
-- **Bartholomew, D. J.** (1998). Scaling unobservable constructs in social science.
-  *Journal of the Royal Statistical Society C (Applied Statistics)*, 47(1), 1–13.
-- **Bartholomew, D. J., Steele, F., Moustaki, I. & Galbraith, J.** (2002).
-  *The Analysis and Interpretation of Multivariate Data for Social Scientists*. Chapman & Hall.
-- **Chalmers, R. P.** (2012). mirt: A multidimensional item response theory package for the
-  R environment. *Journal of Statistical Software*, 48(6), 1–29.
-- **Chen, W.-H. & Thissen, D.** (1997). Local dependence indexes for item pairs using item
-  response theory. *Journal of Educational and Behavioral Statistics*, 22(3), 265–289.
-- **Maydeu-Olivares, A. & Joe, H.** (2006). Limited information goodness-of-fit testing in
-  multidimensional contingency tables. *Psychometrika*, 71(4), 713–732.
-- **Orlando, M. & Thissen, D.** (2000). Likelihood-based item-fit indices for dichotomous
-  item response theory models. *Applied Psychological Measurement*, 24(1), 50–64.
-- **Rizopoulos, D.** (2006). ltm: An R package for latent variable modeling and item response
-  theory analyses. *Journal of Statistical Software*, 17(5), 1–25.
 :::
 
 # Obrigado! {background-color="#0d3b66"}
