@@ -203,23 +203,25 @@ mudança tecnológica no estabelecimento.
 - **E a medida vem com incerteza.** O modelo diz onde cada estabelecimento está e *o quanto
   se pode confiar* nessa posição — o escore bruto não diz nada sobre isso. -->
 
-## Modelos candidatos {.smaller}
+<!-- ## Modelos candidatos {.smaller} -->
+
+## Modelos candidatos
 
 Para resposta dicotômica $U_{ij} \in \{0,1\}$ do estabelecimento $j$ ao item $i$:
 
 $$P(U_{ij} = 1 \mid \theta_j) = c_i + (1 - c_i)\,\frac{1}{1 + e^{-a_i(\theta_j - b_i)}}$$
 
-::: {.small}
+<!-- ::: {.small} -->
 | Modelo | Restrição | Parâmetros por item | Leitura |
 |---|---|---|---|
 | **Rasch** | $a_i = 1$, $c_i = 0$ | $b_i$ | itens diferem só em dificuldade |
 | **1PL** | $a_i = a$, $c_i = 0$ | $b_i$ (+ um $a$ comum) | discriminação comum estimada |
 | **2PL** | $c_i = 0$ | $a_i, b_i$ | itens discriminam de forma distinta |
 | **3PL** | — | $a_i, b_i, c_i$ | acrescenta "acerto ao acaso" |
-:::
+<!-- ::: -->
 
 ::: {.destaque .small}
-A escolha entre eles **não** é por gosto: comparamos ajuste por razão de verossimilhança,
+comparamos ajuste por razão de verossimilhança,
 critérios de informação e medidas de ajuste absoluto.
 :::
 
@@ -235,12 +237,20 @@ critérios de informação e medidas de ajuste absoluto.
 #| label: plot-tetra
 #| fig-height: 3.6
 tet <- polycor::hetcor(as.data.frame(lapply(wirs, factor)), ML = FALSE, std.err = FALSE)$correlations
-as.data.frame(as.table(tet)) |>
+niveis <- paste0("I", 1:6)
+
+tet_df <- as.data.frame(as.table(tet)) |>
   setNames(c("i", "j", "r")) |>
-  ggplot(aes(i, j, fill = r)) +
+  mutate(li = match(i, niveis), co = match(j, niveis)) |>
+  filter(li >= co) |>                                  # triângulo inferior, com a diagonal
+  mutate(cor_txt = ifelse(abs(r) > 0.6, "white", "grey15"))
+
+ggplot(tet_df, aes(j, i, fill = r)) +
   geom_tile(colour = "white", linewidth = 1) +
-  geom_text(aes(label = fmt(r, 2)), size = 3.6,
-            colour = ifelse(abs(as.vector(tet)) > 0.6, "white", "grey15")) +
+  geom_text(aes(label = fmt(r, 2), colour = cor_txt), size = 3.6) +
+  scale_colour_identity() +
+  scale_x_discrete(limits = niveis) +
+  scale_y_discrete(limits = rev(niveis)) +             # I1 no topo
   scale_fill_gradient2(low = cor_alerta, mid = "white", high = cor_principal,
                        midpoint = 0, limits = c(-1, 1)) +
   labs(title = "Correlações tetracóricas entre os seis itens",
