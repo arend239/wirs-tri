@@ -88,3 +88,9 @@ $presentation-h3-font-size: 1.05em !default;
 .reveal table.tab-padroes tbody tr {
   border-bottom: 1px solid #edeff2;
 }
+
+.reveal .legenda-centro {
+  max-width: 62%;
+  margin: .6em auto 0;
+  text-align: center;
+}

@@ -103,13 +103,15 @@ itens_curto5 <- itens_curto[-1]
 n_obs <- nrow(wirs)
 ```
 
-## O banco de dados {.smaller}
+<!-- ## O banco de dados {.smaller} -->
+
+## O banco de dados
 
 **WIRS — *Workplace Industrial Relations Survey* (1990, Reino Unido)**
 
 - Levantamento nacional sobre relações de trabalho em estabelecimentos britânicos.
-- A pesquisa **não foi desenhada para construir escalas** — são perguntas de survey de
-  propósito geral. O interesse é justamente saber se itens assim admitem escalonamento.
+<!-- - A pesquisa **não foi desenhada para construir escalas** — são perguntas de survey de
+  propósito geral. O interesse é justamente saber se itens assim admitem escalonamento. -->
 - **Pergunta de contexto** feita ao gestor:
 
 ::: {.destaque}
@@ -127,7 +129,7 @@ cartão**, seja sobre a introdução da mudança, seja sobre a forma de implemen
 Fonte: Bartholomew (1998), *Applied Statistics* 47, 1–13; Bartholomew, Steele, Moustaki & Galbraith (2002).
 :::
 
-## Os seis itens
+## Os 6 itens
 
 ```{r}
 #| label: tab-itens
@@ -170,18 +172,14 @@ kable(tab, format = "html", align = rep(c("l", "r"), 4), escape = FALSE,
       row.names = FALSE, table.attr = "class='tab-padroes'")
 ```
 
-::: {.small}
-Cada padrão lista as respostas na ordem **I1 I2 I3 I4 I5 I6**; leitura por coluna, com os
-padrões em ordem crescente. Dos 64 possíveis, **`r sum(todos$freq > 0)`
+::: {.small .legenda-centro}
+Dos 64 possíveis, **`r sum(todos$freq > 0)`
 foram observados** e os quatro destacados concentram `r pct(100 * sum(todos$freq[todos$freq >= 50]) / n_obs, 0)`
 da amostra.
 :::
 
-::: {.rodape-fonte}
-Reproduz a Tabela 1 de Bartholomew (1998), *Applied Statistics* 47, p. 3.
-:::
 
-## Definição do traço latente {.smaller}
+## Definição do traço latente
 
 ::: {.destaque}
 $\theta$ = **grau de institucionalização da consulta aos trabalhadores** diante de uma
@@ -194,7 +192,7 @@ mudança tecnológica no estabelecimento.
 
 <!-- . . . -->
 
-**Por que um traço latente e não o escore bruto?**
+<!-- **Por que um traço latente e não o escore bruto?**
 
 - **Contar canais trata todos como iguais.** Quem só reuniu grupos de trabalhadores e quem
   só negociou com o sindicato somam 1 ponto cada — mas não estão no mesmo ponto da escala.
@@ -203,7 +201,7 @@ mudança tecnológica no estabelecimento.
 - **É isso que a TRI estima.** Cada item ganha uma **dificuldade** (o quanto aquele canal é
   exigente) e uma **discriminação** (o quanto ele separa quem institucionaliza de quem não).
 - **E a medida vem com incerteza.** O modelo diz onde cada estabelecimento está e *o quanto
-  se pode confiar* nessa posição — o escore bruto não diz nada sobre isso.
+  se pode confiar* nessa posição — o escore bruto não diz nada sobre isso. -->
 
 ## Modelos candidatos {.smaller}
 
