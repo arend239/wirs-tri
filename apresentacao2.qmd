@@ -829,9 +829,10 @@ apenas **`r length(unique(round(theta, 6)))` valores**: estabelecimentos com o m
 recebem o mesmo $\hat\theta$.
 :::
 
-::: {.small}
+<!-- ::: {.small}
 Os `r n_obs` $\hat\theta$, com seus erros-padrão, ficam salvos em `dados/wirs_theta.csv`.
-:::
+::: -->
+
 :::
 ::::
 
