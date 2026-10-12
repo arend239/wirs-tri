@@ -160,7 +160,7 @@ deles concentram `r pct(pct_top4, 0)` da amostra.
 :::
 
 
-## Os dados brutos: os 64 padrões de resposta {.smaller}
+## Os padrões de resposta {.smaller}
 
 ```{r}
 #| label: tab-padroes-completa
@@ -184,11 +184,18 @@ tab <- do.call(cbind, lapply(bloco, function(b)
 names(tab) <- rep(c("Padrão", "n"), 4)
 kable(tab, format = "html", align = rep(c("l", "r"), 4), escape = FALSE,
       row.names = FALSE, table.attr = "class='tab-padroes'")
+
+freq_pat <- function(p) todos$freq[todos$pat == p]
+n_i1i2   <- sum(wirs$I1 == 1 & wirs$I2 == 1)
+esp_i1i2 <- n_obs * mean(wirs$I1) * mean(wirs$I2)   # esperado sob independencia
 ```
 
 ::: {.small .legenda-centro}
-Dos 64 possíveis, **`r n_pat_obs` foram observados** e os quatro destacados concentram
-`r pct(pct_top4, 0)` da amostra.
+**`r n_pat_obs` dos 64** padrões possíveis foram observados; os quatro destacados representam `r pct(pct_top4, 0)` da amostra:
+nenhum (`r freq_pat("000000")`),
+só reunião de grupo (`r freq_pat("010000")`), 
+só conversa informal (`r freq_pat("100000")`)
+e ambos (`r freq_pat("110000")`). 
 :::
 
 ## Definição do traço latente
@@ -240,27 +247,21 @@ função logística forneça resultados semelhantes aos da ogiva normal.
 
 ::: {.small}
 1. **Unidimensionalidade** — um único $\theta$ explica a associação entre os itens.
-2. **Independência local** — dadas as respostas condicionadas a $\theta$, os itens são independentes.
-3. **Monotonicidade** — $P(X_i = 1 \mid \theta)$ é crescente em $\theta$.
+2. **Independência local** — controlando o nível de $\theta$, a resposta a um item não está
+   relacionada à resposta a outro item.
+3. **Monotonicidade** (modelo acumulativo) — $P(X_i = 1 \mid \theta)$ é crescente em $\theta$.
 :::
 
-```{r}
-#| label: monotonia
-# proporcao de uso de cada item por escore dos DEMAIS itens (rest-score):
-# se o traco e monotono, essa proporcao nao deve decrescer
-min_diff <- function(dados) {
-  sapply(seq_len(ncol(dados)), function(i) {
-    p <- tapply(dados[[i]], rowSums(dados[, -i]), mean)
-    min(diff(p))                    # menor variacao entre faixas consecutivas
-  })
-}
-mono6 <- min_diff(wirs)
-mono5 <- min_diff(wirs5)
-```
+::: {.pressuposto}
+Pressuposto: unidimensionalidade
+:::
 
+:::: {.columns}
+::: {.column width="62%"}
 ```{r}
 #| label: plot-tetra
-#| fig-height: 3.6
+#| fig-width: 6.6
+#| fig-height: 4.4
 tet <- polycor::hetcor(as.data.frame(lapply(wirs, factor)), ML = FALSE, std.err = FALSE)$correlations
 niveis <- paste0("I", 1:6)
 
@@ -283,15 +284,30 @@ ggplot(tet_df, aes(j, i, fill = r)) +
        x = NULL, y = NULL) +
   theme(legend.position = "right", panel.grid = element_blank())
 ```
-
-::: {.small}
-**Monotonicidade** (proporção de uso de cada item por escore dos demais): no conjunto
-de seis, **`r sum(mono6 < -0.02)` dos 6 itens** apresentam trechos **decrescentes** —
-o pior recua `r fmt(abs(100 * min(mono6)), 0)` p.p. Retirando I1, a proporção passa a ser
-**crescente em todos os cinco itens** (menor variação = `r fmt(min(mono5), 3)`).
 :::
 
+::: {.column width="38%"}
+::: {.small}
+**O que o mapa mostra:** a correlação tetracórica estima a correlação entre as
+variáveis contínuas latentes supostas por trás de cada resposta 0/1 — a medida de
+associação adequada para itens binários (aula 2).
+
+**Como ler:** se um único traço explicasse todas as respostas, as correlações seriam
+**todas positivas**.
+
+- I3–I6 formam um bloco coeso (`r fmt(min(tet[3:6, 3:6]), 2)` a
+  `r fmt(max(tet[3:6, 3:6][tet[3:6, 3:6] < 1]), 2)`).
+- I1 é **negativa** com I2 (`r fmt(tet[1, 2], 2)`) e I4 (`r fmt(tet[1, 4], 2)`) e
+  quase nula com os demais.
+:::
+:::
+::::
+
 ## Evidência 1 — autovalores da matriz tetracórica {.smaller}
+
+::: {.pressuposto}
+Pressuposto: unidimensionalidade
+:::
 
 ```{r}
 #| label: autovalores
@@ -311,22 +327,34 @@ data.frame(
 ```
 
 ::: {.small}
-Procedimento da aula: matriz de correlação **tetracórica** (variáveis binárias) $\to$
-autovalores $\to$ proporção de explicação.
-Com os seis itens há **dois autovalores acima de 1** (`r fmt(av6[1], 2)` e
-`r fmt(av6[2], 2)`): o segundo fator carrega `r pct(100 * av6[2] / sum(av6), 0)` da
-variância — não é ruído. Sem I1, o segundo autovalor cai para `r fmt(av5[2], 2)`,
-no limiar, e o primeiro fator passa a explicar `r pct(100 * av5[1] / sum(av5), 0)`.
+Cada autovalor é a variância que um fator resume; eles somam o número de itens, e a
+"% explicada" é o autovalor dividido por esse total. Um fator com autovalor **acima
+de 1** resume mais do que um item isolado.
+
+**Interpretação:**
+
+- **Com os 6 itens**, há **dois autovalores acima de 1**: `r fmt(av6[1], 2)`
+  (`r pct(100 * av6[1] / sum(av6), 0)`) e `r fmt(av6[2], 2)`
+  (`r pct(100 * av6[2] / sum(av6), 0)`). O segundo fator tem dois terços do tamanho do
+  primeiro: há uma segunda dimensão relevante.
+- **Sem I1**, o 1º autovalor **não muda** (`r fmt(av5[1], 2)`): I1 não contribui para a
+  dimensão principal. O 2º cai para `r fmt(av5[2], 2)`, a segunda dimensão vinha sobretudo de I1.
 :::
 
 ## Evidência 2 — análise fatorial exploratória {.smaller}
+
+::: {.pressuposto}
+Pressuposto: unidimensionalidade
+:::
 
 ```{r}
 #| label: efa
 efa1 <- mirt(wirs, 1, itemtype = "2PL", verbose = FALSE)
 efa2 <- mirt(wirs, 2, itemtype = "2PL", verbose = FALSE)
 cmp_fatores <- anova(efa1, efa2, verbose = FALSE)
-cargas <- summary(efa2, rotate = "oblimin", verbose = FALSE)$rotF
+sum_efa2 <- summary(efa2, rotate = "oblimin", verbose = FALSE)
+cargas <- sum_efa2$rotF
+fcor_fatores <- sum_efa2$fcor[1, 2]
 tab_cargas <- data.frame(
   Item = paste0("I", 1:6), Canal = itens_curto,
   F1 = fmt(cargas[, 1], 2), F2 = fmt(cargas[, 2], 2)
@@ -336,34 +364,72 @@ kable(tab_cargas, align = "llrr",
 ```
 
 ::: {.small}
-Modelo de 2 fatores (oblimin) ajustado com `mirt`. O **Fator 2 é bipolar**: contrasta
-discussão informal individual (I1, $\lambda = `r fmtm(cargas[1,2], 2)`$) com
-reunião de grupo (I2, $\lambda = `r fmtm(cargas[2,2], 2)`$) — são canais
-**substitutos**, não manifestações do mesmo traço. O Fator 1 reúne I3–I6.
+**O que a tabela mostra:** as cargas de cada item num modelo de **2 fatores**
+(rotação oblimin, `mirt`). A carga $\lambda$ mede a força da relação entre o item e o
+fator (com fatores quase não correlacionados, equivale à correlação); valores acima de
+~0,40 em módulo indicam que o item pertence ao fator.
+
+**Interpretação:**
+
+- **Fator 1** reúne os canais coletivos I3–I6 ($\lambda$ de
+  `r fmt(min(cargas[3:6, 1]), 2)` a `r fmt(max(cargas[3:6, 1]), 2)`): é a dimensão do
+  traço que definimos. I1 quase não carrega nele (`r fmt(cargas[1, 1], 2)`).
+- **Fator 2 é bipolar**: I1 com sinal **positivo** (`r fmt(cargas[1, 2], 2)`) e I2 com
+  sinal **negativo** (`r fmt(cargas[2, 2], 2)`). Ele não mede "mais consulta", mede
+  a **escolha entre um canal e outro**: quem conversa individualmente tende a não
+  reunir grupos.
+- Os 2 fatores ajustam melhor que 1 (TRV = `r fmt(cmp_fatores$X2[2], 1)`,
+  `r cmp_fatores$df[2]` gl, p `r fmt_p(cmp_fatores$p[2])`) e são praticamente não
+  correlacionados ($r$ = `r fmt(fcor_fatores, 2)`): são duas dimensões distintas.
 :::
+
+```{r}
+#| label: unidim
+# calculos do slide comentado abaixo; ud6 e desc6 seguem usados na tabela de decisao
+ud6 <- unidimTest(ltm(wirs ~ z1), B = 100)
+desc6 <- descript(wirs)
+```
+
+<!-- Slide retirado: análise paralela e alfa/bisserial (redundantes com os slides de
+     autovalores, análise fatorial e monotonicidade)
 
 ## Evidência 3 — análise paralela e consistência {.smaller}
 
 :::: {.columns}
 ::: {.column width="52%"}
-```{r}
-#| label: unidim
-ud6 <- unidimTest(ltm(wirs ~ z1), B = 100)
-desc6 <- descript(wirs)
-```
 
-**Análise paralela modificada** (`unidimTest`, $B = 100$):
+::: {.pressuposto}
+Pressuposto: unidimensionalidade
+:::
 
-- 2º autovalor observado: **`r fmt(ud6$Tobs[2], 3)`**
-- média sob o modelo unidimensional: `r fmt(mean(ud6$T.boot[,2]), 3)`
-- valor-p: **`r fmt_p(ud6$p.value)`**
+**Análise paralela modificada** (`unidimTest`, $B = 100$)
 
-$\Rightarrow$ a hipótese de unidimensionalidade é **rejeitada** com os seis itens.
+::: {.small}
+**O que faz:** responde se o 2º autovalor observado é maior do que o esperado **se os
+dados fossem de fato unidimensionais**. Para isso, simula `r nrow(ud6$T.boot)` bancos a
+partir do 2PL de um fator ajustado e recalcula o 2º autovalor em cada um.
+:::
+
+| | 2º autovalor |
+|---|---|
+| observado | **`r fmt(ud6$Tobs[2], 3)`** |
+| média nos bancos simulados | `r fmt(mean(ud6$T.boot[, 2]), 3)` |
+| maior valor simulado | `r fmt(max(ud6$T.boot[, 2]), 3)` |
+
+::: {.small}
+**Interpretação:** nenhum banco simulado chegou ao valor observado, e
+p = `r fmt_p(ud6$p.value)` é o **menor valor-p possível** com $B = 100$ (1/101).
+A hipótese de unidimensionalidade é **rejeitada** com os seis itens.
+
+*Os autovalores diferem dos do slide anterior porque a versão modificada usa
+comunalidades na diagonal da matriz tetracórica.*
+:::
 :::
 
 ::: {.column width="48%"}
 ```{r}
 #| label: tab-alpha
+#| eval: false
 data.frame(
   `Item excluído` = c("nenhum", paste0("I", 1:6)),
   Alfa = fmt(desc6$alpha[, 1], 3),
@@ -381,37 +447,17 @@ praticamente nula (`r fmt(desc6$ExBisCorr[2], 3)`) — voltamos a esse item adia
 :::
 :::
 ::::
+-->
 
-## E quanto a I2? {.smaller}
+## Evidência 3 — dependência local no modelo 2PL {.smaller}
 
-```{r}
-#| label: prev-i2
-cf_prev <- coef(ltm(wirs5 ~ z1))    # so para citar b e a de I2 neste slide
-```
-
-::: {.destaque}
-O alfa sobe sem I2 e sua bisserial é ~0. Por que mantê-lo?
+::: {.pressuposto}
+Pressuposto: independência local
 :::
-
-::: {.small}
-- **O alfa não é o critério aqui.** Ele pressupõe itens com discriminações parecidas
-  (essencialmente $\tau$-equivalentes) — exatamente o que o 2PL rejeita. Um item de
-  discriminação baixa **sempre** derruba o alfa, mesmo sendo válido.
-- **I2 é o único item fácil da escala** ($b = `r fmtm(cf_prev["I2","Dffclt"], 2)`$,
-  o único negativo). Sem ele, todos os itens ficam acima da média da população e a
-  escala perde qualquer capacidade de discriminar na faixa baixa de $\theta$ — onde
-  está a maior parte dos estabelecimentos.
-- **Ele não viola pressuposto algum**: carga positiva no Fator 1, bisserial não
-  negativa, monotonicidade preservada, sem dependência local com os demais.
-- **Custo assumido**: discrimina pouco ($a = `r fmtm(cf_prev["I2","Dscrmn"], 2)`$)
-  e contribui pouca informação. Mostramos adiante a alternativa de 4 itens
-  (I3–I6, a de Bartholomew) — a descrição do traço **não muda**.
-:::
-
-## Evidência 4 — dependência local no modelo 2PL {.smaller}
 
 ```{r}
 #| label: ld6
+# LD X2 (mirt): nao aparece neste slide, mas lower/lower5/m2pl5 seguem usados adiante
 m2pl6 <- mirt(wirs, 1, itemtype = "2PL", verbose = FALSE)
 ld6 <- residuals(m2pl6, type = "LD", verbose = FALSE)
 ld_tab <- as.data.frame(as.table(ld6)) |>
@@ -428,51 +474,219 @@ m2pl5 <- mirt(wirs5, 1, itemtype = "2PL", verbose = FALSE)
 lower  <- ld_pares(m2pl6, paste0("I", 1:6)) |> head(4)
 lower5 <- ld_pares(m2pl5, paste0("I", 2:6)) |> head(4)
 
+```
+
+```{r}
+#| label: margens
+# residuos qui-quadrado nas margens de 2 e 3 vias (ltm::margins); regra pratica 3,5
+res_pares <- function(fit, itens) {
+  m <- margins(fit)$margins                  # [par, (i, j, Obs, Exp, resid), resposta]
+  data.frame(par = paste(itens[m[, 1, 1]], "–", itens[m[, 2, 1]]),
+             r   = apply(m[, 5, ], 1, max)) |> arrange(desc(r))
+}
+triplas_acima <- function(fit, itens, regra = 3.5) {
+  m  <- margins(fit, type = "three-way")$margins   # [tripla, (i, j, k, Obs, Exp, resid), resposta]
+  mx <- apply(m[, 6, ], 1, max)
+  list(n = sum(mx > regra), total = length(mx),
+       nomes = apply(m[mx > regra, 1:3, 1, drop = FALSE], 1,
+                     function(x) paste(itens[x], collapse = "-")))
+}
+fit_lt6 <- ltm(wirs ~ z1)
+fit_lt5 <- ltm(wirs5 ~ z1)
+mg6 <- res_pares(fit_lt6, paste0("I", 1:6))
+mg5 <- res_pares(fit_lt5, paste0("I", 2:6))
+tr6 <- triplas_acima(fit_lt6, paste0("I", 1:6))
+tr5 <- triplas_acima(fit_lt5, paste0("I", 2:6))
+
 kable(data.frame(
-  `Par (6 itens)` = lower$par,  `LD X²` = fmt(lower$v, 1),
-  `Par (5 itens)` = lower5$par, `LD X² ` = fmt(lower5$v, 1),
-  check.names = FALSE), align = "lrlr")
+  `Par (6 itens)` = mg6$par[1:4], `Resíduo`  = realce(fmt(mg6$r[1:4], 1), mg6$r[1:4] > 3.5),
+  `Par (5 itens)` = mg5$par[1:4], `Resíduo ` = realce(fmt(mg5$r[1:4], 1), mg5$r[1:4] > 3.5),
+  check.names = FALSE), format = "html", escape = FALSE, align = "lrlr")
 ```
 
 ::: {.small}
-Estatística $LD\,\chi^2$ de Chen & Thissen (1 g.l.): valores acima de ~10 indicam
-violação séria de independência local. Com os seis itens, o par **I1–I2** atinge
-**`r fmt(max(lower$v), 0)`** — mais de dez vezes o limiar — e I1 aparece também no
-segundo pior par.
+**O que a tabela mostra:** para cada par de itens, `margins()` (`ltm`) compara a tabela
+2×2 observada com a esperada pelo 2PL e calcula o resíduo $(O-E)^2/E$ em cada casela
+(aqui, o maior das quatro). É o análogo das **correlações residuais** da aula: sob
+independência local, o modelo reproduz a associação entre os pares e os resíduos ficam
+pequenos. Regra prática: **acima de 3,5** indica desajuste (Rizopoulos, 2006); em
+vermelho, os pares acima dela.
+:::
+
+::: {.small}
+**Com os seis itens**, o par **I1–I2** atinge **`r fmt(mg6$r[1], 1)`**, mais de dez vezes
+a regra — o mesmo par apontado por Bartholomew (1998, Tabela 4: 142 estabelecimentos
+usam os dois canais, contra 221,8 esperados). Nas margens de 3 vias, `r tr6$n` das
+`r tr6$total` triplas passam da regra, e as maiores são as que contêm I1 e I2.
 :::
 
 ::: {.alerta .small}
-**Diagnóstico convergente:** I1 (discussão informal individual) não pertence à mesma
-escala. Ele mede o **oposto** da institucionalização — quanto mais o gestor resolve na
-conversa individual, menos aciona canais coletivos.
+**Diagnóstico convergente:** I1 e I2 funcionam como **substitutos** — *"one but not
+both"* (Bartholomew, 1998) —, o que viola a independência local no par I1–I2 e em todas
+as triplas que o contêm.
 :::
 
 ::: {.small}
-**Após excluir I1**, o pior par cai de `r fmt(max(lower$v), 0)` para
-**`r fmt(max(lower5$v), 1)`** (`r lower5$par[1]`) — ainda ligeiramente acima do limiar,
-e é o resíduo que assumimos e declaramos nas limitações. Todos os demais pares não
-passam de `r fmt(lower5$v[2], 1)`.
+**Após excluir I1**, o maior resíduo cai de `r fmt(mg6$r[1], 1)` para
+**`r fmt(mg5$r[1], 1)`** (`r mg5$par[1]`) — ainda acima da regra, e é o resíduo que
+assumimos e declaramos nas limitações. Os demais pares não passam de
+`r fmt(mg5$r[2], 1)`; nas 3 vias, `r tr5$n` das `r tr5$total` triplas passam da regra
+(`r paste(tr5$nomes, collapse = ", ")`).
 :::
 
-## Decisão: calibrar os itens I2–I6 {.smaller}
+## Evidência 4 — monotonicidade {.smaller}
+
+```{r}
+#| label: monotonia
+# proporcao de uso de cada item por escore nos DEMAIS itens (rest-score), com
+# escores consecutivos agrupados ate cada grupo ter >= 10% da amostra e queda
+# minima de 3 p.p. para contar violacao (mesma logica de mokken::check.monotonicity)
+grupos_rest <- function(r, minsize) {
+  u <- sort(unique(r)); g <- integer(length(u)); k <- 1; acc <- 0
+  for (t in seq_along(u)) {
+    g[t] <- k; acc <- acc + sum(r == u[t])
+    if (acc >= minsize) { k <- k + 1; acc <- 0 }
+  }
+  if (acc > 0 && k > 1) g[g == k] <- k - 1      # sobra do topo vai para o grupo anterior
+  lab <- tapply(u, g, function(x) if (length(x) == 1) x else paste0(min(x), "–", max(x)))
+  factor(lab[as.character(g[match(r, u)])], levels = lab)
+}
+mono_tab <- function(dados, minsize = floor(nrow(dados) / 10)) {
+  bind_rows(lapply(names(dados), function(i) {
+    r <- rowSums(dados[, setdiff(names(dados), i)])
+    g <- grupos_rest(r, minsize)
+    data.frame(item = i, grupo = levels(g), x = as.numeric(tapply(r, g, mean)),
+               p = as.numeric(tapply(dados[[i]], g, mean)), n = as.numeric(table(g)))
+  }))
+}
+quedas <- function(tab, minvi = 0.03)
+  sapply(split(tab$p, factor(tab$item, levels = unique(tab$item))),
+         function(p) sum(diff(p) < -minvi))
+mono6 <- mono_tab(wirs);  q6 <- quedas(mono6)
+mono5 <- mono_tab(wirs5); q5 <- quedas(mono5)
+i1 <- mono6[mono6$item == "I1", ]
+```
+
+::: {.pressuposto}
+Pressuposto: monotonicidade
+:::
+
+:::: {.columns}
+::: {.column width="56%"}
+```{r}
+#| label: plot-monotonia
+#| fig-width: 6.2
+#| fig-height: 4.3
+mono6$item <- factor(mono6$item, levels = paste0("I", 1:6),
+                     labels = paste(paste0("I", 1:6), itens_curto, sep = " · "))
+ggplot(mono6, aes(x, p, group = item,
+                  colour = grepl("^I1", item))) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 2.2) +
+  facet_wrap(~ item, nrow = 2) +
+  scale_colour_manual(values = c(`TRUE` = cor_alerta, `FALSE` = cor_principal), guide = "none") +
+  scale_x_continuous(breaks = 0:5, limits = c(0, 5)) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1), limits = c(0, 0.8)) +
+  labs(title = "Proporção de uso pelo nº de outros canais usados",
+       subtitle = "Escores agrupados até cada grupo ter ≥ 10% da amostra (ponto na média do grupo)",
+       x = "nº de outros canais usados (escore nos demais itens)", y = NULL)
+```
+:::
+
+::: {.column width="44%"}
+::: {.small}
+**O que verifica:** os modelos da disciplina são **acumulativos** (aula 1): a
+probabilidade de usar o canal tem de crescer com $\theta$. Antes de calibrar, $\theta$ é
+aproximado pelo número de **outros** canais usados — se o item mede o mesmo traço, a
+proporção de uso deve subir da esquerda para a direita.
+
+**Interpretação:**
+
+- **I1 sobe e depois cai**: de `r pct(100 * max(i1$p), 0)` para
+  `r pct(100 * tail(i1$p, 1), 0)` entre os que mais usam outros canais. O pico no meio é
+  o comportamento de **ponto ideal** dos modelos de **desdobramento** (aula 1), que um
+  modelo acumulativo não representa.
+- **I2 é plano** (`r pct(100 * min(mono6$p[mono6$item == levels(mono6$item)[2]]), 0)` a
+  `r pct(100 * max(mono6$p[mono6$item == levels(mono6$item)[2]]), 0)`): não decresce, mas
+  quase não acompanha o traço.
+- **I3–I6 crescem** em todos os grupos.
+- A **bisserial** de `descript()` (script da aula) aponta o mesmo: só I1 é negativa
+  (`r fmt(desc6$ExBisCorr[1], 3)`), e a de I2 é quase nula (`r fmt(desc6$ExBisCorr[2], 3)`).
+
+**Referências:** Rusch et al. (2013) chegam ao mesmo quadro — `check.monotonicity`
+acusa violações só no item 1, e a curva suavizada mostra I1 "clearly" não monótono e I2
+"borderline". **Sem I1**, os cinco itens são crescentes.
+:::
+:::
+::::
+
+## Decisão: calibrar os itens I2–I6
 
 ::: {.destaque}
-As cinco evidências apontam na mesma direção: **I1 sai do conjunto.**
+Todas as evidências apontam na mesma direção: **I1 sai do conjunto.**
 :::
 
-::: {.small}
-| Evidência | Com os 6 itens | Sem I1 |
-|---|---|---|
-| Autovalores (tetracórica) | 2 acima de 1 (`r fmt(av6[1], 2)`; `r fmt(av6[2], 2)`) | 2º cai para `r fmt(av5[2], 2)` |
-| Análise fatorial | Fator 2 bipolar, contrasta I1 com I2 | um único fator |
-| Análise paralela | unidimensionalidade **rejeitada** ($p$ `r fmt_p(ud6$p.value)`) | — |
-| Monotonicidade | `r sum(mono6 < -0.02)` itens com trechos decrescentes | crescente nos 5 |
-| Alfa / bisserial | bisserial de I1 = `r fmt(desc6$ExBisCorr[1], 3)` | alfa sobe para `r fmt(desc6$alpha[2,1], 3)` |
-| Dependência local | I1–I2: $LD\,\chi^2$ = `r fmt(max(lower$v), 0)` | pior par = `r fmt(max(lower5$v), 1)` |
+::: {.tab-decisao}
+| Pressuposto | Evidência | Com os 6 itens | Sem I1 |
+|----------|----------|----------------|----------------|
+| Unidimensionalidade | Correlações tetracóricas | I1 negativa com I2 (`r fmt(tet[1, 2], 2)`) e I4 (`r fmt(tet[1, 4], 2)`) | todas positivas (`r fmt(min(tet[2:6, 2:6]), 2)` a `r fmt(max(tet[2:6, 2:6][tet[2:6, 2:6] < 1]), 2)`) |
+| Unidimensionalidade | Autovalores | 2 acima de 1 (`r fmt(av6[1], 2)`; `r fmt(av6[2], 2)`) | 1º não muda; 2º cai para `r fmt(av5[2], 2)`, no limiar |
+| Unidimensionalidade | Análise fatorial | 2 fatores ajustam melhor (TRV = `r fmt(cmp_fatores$X2[2], 1)`, p `r fmt_p(cmp_fatores$p[2])`); Fator 2 bipolar, I1 × I2 | — |
+| Independência local | Resíduos nas margens | I1–I2 = `r fmt(mg6$r[1], 1)`; `r tr6$n` de `r tr6$total` triplas acima de 3,5 | maior par `r mg5$par[1]` = `r fmt(mg5$r[1], 1)`; `r tr5$n` de `r tr5$total` triplas acima de 3,5 |
+| Monotonicidade | Proporção de uso pelo escore nos demais | I1 sobe e depois cai; bisserial de I1 = `r fmt(desc6$ExBisCorr[1], 3)` | crescente nos 5 |
 :::
 
 ::: {.destaque .small}
 **O traço passa a ser estimado por I2–I6.**
+:::
+
+## E quanto a I2?
+
+```{r}
+#| label: prev-i2
+cf_prev <- coef(ltm(wirs5 ~ z1))    # so para citar b e a de I2 neste slide
+p_i2    <- mono6$p[grepl("^I2", mono6$item)]
+```
+
+::: {.destaque}
+I1 sai do conjunto. **I2 pode ser incluído ou não** — as evidências apontam para os
+dois lados.
+:::
+
+:::: {.columns}
+::: {.column width="50%"}
+**Para incluir I2**
+
+::: {.small}
+- **Associação positiva** com todos os demais itens (tetracóricas de
+  `r fmt(min(tet[2, 3:6]), 2)` a `r fmt(max(tet[2, 3:6]), 2)`).
+- **Não viola a monotonicidade**: a proporção de uso não cai
+  (`r pct(100 * min(p_i2), 0)` a `r pct(100 * max(p_i2), 0)`).
+- **É o único item fácil** ($b = `r fmtm(cf_prev["I2", "Dffclt"], 2)`$, o único
+  negativo). Sem ele, todos os itens ficam acima da média e a escala perde a faixa
+  baixa de $\theta$ — onde está a maior parte dos estabelecimentos.
+:::
+:::
+
+::: {.column width="50%"}
+**Para retirar I2**
+
+::: {.small}
+- **Quase não acompanha o traço**: curva de uso plana, bisserial próxima de zero
+  (`r fmt(desc6$ExBisCorr[2], 3)`) e discriminação baixa
+  ($a = `r fmtm(cf_prev["I2", "Dscrmn"], 2)`$).
+- **Mantém dependência local com I4** (resíduo de `r fmt(mg5$r[1], 1)`, acima de 3,5).
+- **Nas referências, forma uma dimensão à parte**: Bartholomew (1998) o vê como
+  *"the sole representative of the informal type"* e usa só I3–I6; Rusch et al. (2013)
+  separam {I2, I4} de {I3, I5, I6}.
+:::
+:::
+::::
+
+::: {.destaque .small}
+**Seguimos com I2–I6**, pela cobertura da faixa baixa de $\theta$, e declaramos a
+dependência I2–I4 como limitação. A alternativa **I3–I6** (Bartholomew) é calibrada no
+confronto final com a fonte.
 :::
 
 # Calibração dos itens {background-color="#0d3b66"}

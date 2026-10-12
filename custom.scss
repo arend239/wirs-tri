@@ -94,3 +94,17 @@ $presentation-h3-font-size: 1.05em !default;
   margin: .6em auto 0;
   text-align: center;
 }
+
+.reveal .pressuposto {
+  font-size: calc(var(--r-main-font-size) * .5);
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: #0b6b5e;
+  margin: 0 0 .2em;
+}
+
+.reveal .tab-decisao table {
+  font-size: .62em;
+  margin-top: .4em;
+}

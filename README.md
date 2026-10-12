@@ -17,7 +17,7 @@ banco **WIRS** (*Workplace Industrial Relations Survey*, 1990), distribuído no 
 | `apresentacao.html` | Apresentação renderizada |
 | `dados/WIRS.csv` | Banco de dados (1005 estabelecimentos × 6 itens, separador `;`) |
 | `instrucoes.md` | Enunciado da tarefa |
-| `Scaling Unobservable Constructs in Social Science - John Wiley.pdf` | Artigo-fonte: Bartholomew (1998), que publicou e analisou estes dados |
+| `referencias/` | Artigos e exercícios que analisam o WIRS, incluindo Bartholomew (1998), o artigo-fonte; índice e resumo dos pressupostos verificados em `referencias/README.md` |
 
 ## Como renderizar
 
@@ -36,11 +36,14 @@ install.packages(c("ltm", "mirt", "ggplot2", "dplyr", "tidyr",
 ## Referências
 
 - Bartholomew, D. (1998). Scaling unobservable constructs in social science.
-  *Applied Statistics*, 47, 1–13. (PDF neste repositório; a Tabela 1 do artigo é a
+  *Applied Statistics*, 47, 1–13. (PDF em `referencias/`; a Tabela 1 do artigo é a
   distribuição de padrões de resposta reproduzida na apresentação.)
 - Bartholomew, D., Steele, F., Moustaki, I. & Galbraith, J. (2002).
   *The Analysis and Interpretation of Multivariate Data for Social Scientists*. Chapman & Hall.
 - Rizopoulos, D. (2006). `ltm`: An R package for latent variable modeling and item
   response theory analyses. *Journal of Statistical Software*, 17(5), 1–25.
+- Rusch, T., Mair, P. & Hatzinger, R. (2013). *Psychometrics with R: A review of CRAN
+  packages for item response theory*. Discussion Paper 2013/2, WU Wien.
+  (Tutorial completo com o WIRS; PDF em `referencias/`.)
 - Chalmers, R. P. (2012). `mirt`: A multidimensional item response theory package for
   the R environment. *Journal of Statistical Software*, 48(6), 1–29.
