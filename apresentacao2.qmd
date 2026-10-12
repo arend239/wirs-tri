@@ -851,7 +851,7 @@ g_pes <- ggplot(massa, aes(theta, p)) +
            colour = cor_destaque, size = 3.6) +
   scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
   coord_cartesian(xlim = lim_x) +
-  labs(title = "Estabelecimentos: distribuição de θ estimado", x = NULL, y = "proporção")
+  labs(title = "Estabelecimentos: distribuição de θ estimado", x = NULL, y = NULL)
 g_it <- ggplot(data.frame(b = cf[, "Dffclt"], lab = rot4), aes(b, reorder(lab, b))) +
   geom_point(colour = cor_destaque, size = 4) +
   coord_cartesian(xlim = lim_x) +
