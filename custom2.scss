@@ -1,0 +1,79 @@
+/*-- scss:rules --*/
+
+/* complementos de custom.scss usados apenas em apresentacao2.qmd */
+
+.reveal table.funil {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .86em;
+}
+
+.reveal table.funil th,
+.reveal table.funil td {
+  padding: .22em .45em;
+  border: none;
+  vertical-align: middle;
+}
+
+.reveal table.funil thead th {
+  border-bottom: 1px solid #c9ced6;
+}
+
+.reveal table.funil tbody tr {
+  border-bottom: 1px solid #edeff2;
+}
+
+.reveal table.funil tbody tr:last-child td {
+  font-weight: 600;
+}
+
+.reveal table.tab-2x2 {
+  margin: .2em auto;
+  border-collapse: collapse;
+  font-size: .72em;
+}
+
+.reveal table.tab-2x2 th,
+.reveal table.tab-2x2 td {
+  padding: .3em .8em;
+  border: 1px solid #dfe3e8;
+  text-align: center;
+}
+
+.reveal table.tab-2x2 thead th {
+  background: #f3f5f7;
+}
+
+.reveal .ok   { color: #0b6b5e; font-weight: 700; }
+.reveal .nok  { color: #c0392b; font-weight: 700; }
+.reveal .esp  { color: #6b7280; }
+
+.reveal .compacto ul,
+.reveal .compacto ol {
+  margin-top: .15em;
+}
+
+.reveal .compacto li {
+  margin-bottom: .12em;
+}
+
+.reveal .tab-modelos table {
+  font-size: .6em;
+}
+
+.reveal table.funil.decisao tbody tr:last-child td {
+  font-weight: normal;
+}
+
+.reveal table.funil.decisao td:last-child {
+  font-weight: 600;
+}
+
+.reveal .legenda-centro.larga {
+  max-width: 84%;
+  margin-top: .4em;
+}
+
+.reveal table.funil.simples tbody tr:last-child td {
+  font-weight: normal;
+}
