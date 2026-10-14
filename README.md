@@ -13,23 +13,27 @@ banco **WIRS** (*Workplace Industrial Relations Survey*, 1990), distribuído no 
 
 | Arquivo | Descrição |
 |---|---|
-| `apresentacao.qmd` | Apresentação Quarto/revealjs (fonte, R + `knitr`) |
-| `apresentacao.html` | Apresentação renderizada |
+| `apresentacao3.qmd` / `.html` | **Versão atual**: apresentação de até 20 min, com validação cruzada na escolha do modelo |
+| `apresentacao2.qmd` / `.html` | Versão anterior de até 20 min |
+| `apresentacao.qmd` / `.html` | Primeira versão, completa |
+| `roteiro.md` | Roteiro de fala da `apresentacao3`, em duas partes (slides 1–14 e 15–23), com tempos e perguntas prováveis |
+| `roteiro-parte2.html` | Parte 2 do roteiro em página visual, com as figuras e tabelas de cada slide |
 | `dados/WIRS.csv` | Banco de dados (1005 estabelecimentos × 6 itens, separador `;`) |
+| `dados/wirs_theta.csv` | θ estimados (EAP) e erros-padrão, gerados ao renderizar a apresentação |
 | `instrucoes.md` | Enunciado da tarefa |
 | `referencias/` | Artigos e exercícios que analisam o WIRS, incluindo Bartholomew (1998), o artigo-fonte; índice e resumo dos pressupostos verificados em `referencias/README.md` |
 
 ## Como renderizar
 
 ```bash
-quarto render apresentacao.qmd
+quarto render apresentacao3.qmd
 ```
 
-Requisitos: R ≥ 4.3 com os pacotes `ltm`, `mirt`, `ggplot2`, `dplyr`, `tidyr`,
+Requisitos: R ≥ 4.3 com os pacotes `ltm`, `mirt`, `polycor`, `ggplot2`, `dplyr`, `tidyr`,
 `patchwork`, `knitr` e `kableExtra`; Quarto ≥ 1.4.
 
 ```r
-install.packages(c("ltm", "mirt", "ggplot2", "dplyr", "tidyr",
+install.packages(c("ltm", "mirt", "polycor", "ggplot2", "dplyr", "tidyr",
                    "patchwork", "knitr", "kableExtra"))
 ```
 

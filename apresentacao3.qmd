@@ -1,0 +1,1272 @@
+---
+title: "Calibração de um traço latente a partir do banco WIRS"
+subtitle: "Teoria de Resposta ao Item aplicada a dados de consulta trabalhista"
+author: "Giovanni Zini · João Arend"
+institute: "MAT02012 — Tópicos Avançados em Estatística IV · UFRGS"
+lang: pt-BR
+format:
+  revealjs:
+    theme: [default, custom.scss, custom2.scss]
+    slide-number: true
+    show-slide-number: all
+    transition: fade
+    transition-speed: fast
+    width: 1280
+    height: 760
+    margin: 0.06
+    center: false
+    footer: "TRI · banco WIRS (pacote `ltm`)"
+    fig-align: center
+    df-print: kable
+    html-math-method: mathjax
+    embed-resources: true
+execute:
+  echo: false
+  warning: false
+  message: false
+  cache: false
+  fig-width: 9
+  fig-height: 4.2
+  dpi: 200
+  fig-dpi: 600
+---
+
+```{r}
+#| label: setup
+
+library(ltm)
+library(ggplot2)
+library(dplyr)
+library(patchwork)
+library(knitr)
+
+# ---- cores e tema (mesmos da apresentacao 1) -----------------------------
+cor_principal <- "#0d3b66"
+cor_destaque  <- "#0b6b5e"
+cor_alerta    <- "#c0392b"
+cor_aviso     <- "#b5651d"
+paleta_itens  <- c("#0d3b66", "#0b6b5e", "#b5651d", "#7d4e9c")
+
+theme_tri <- function(base_size = 13) {
+  theme_minimal(base_size = base_size) +
+    theme(
+      panel.grid.minor = element_blank(),
+      panel.grid.major = element_line(colour = "#e7e9ec"),
+      plot.title = element_text(face = "bold", colour = cor_principal, size = base_size * 1.05),
+      plot.subtitle = element_text(colour = "#5b6270", size = base_size * 0.85),
+      legend.position = "bottom",
+      legend.title = element_blank(),
+      strip.text = element_text(face = "bold", colour = cor_principal)
+    )
+}
+theme_set(theme_tri())
+
+# ---- formatacao numerica em pt-BR ----------------------------------------
+fmt <- function(x, d = 2, sinal = FALSE) {
+  unname(formatC(x, format = "f", digits = d, decimal.mark = ",",
+                 flag = if (sinal) "+" else ""))
+}
+pct  <- function(x, d = 0) paste0(fmt(x, d), "%")
+fmtm <- function(x, d = 2, sinal = FALSE) gsub(",", "{,}", fmt(x, d, sinal), fixed = TRUE)
+fmt_p <- function(p) {
+  ifelse(p < 0.001, "< 0,001",
+         ifelse(p < 0.01, fmt(p, 3), fmt(p, 2)))
+}
+marca <- function(ok, txt) {
+  paste0("<span class='", ifelse(ok, "ok", "nok"), "'>", ifelse(ok, "✓", "✗"),
+         "</span> ", txt)
+}
+
+# ---- dados ---------------------------------------------------------------
+wirs <- read.csv2("dados/WIRS.csv", check.names = FALSE)
+names(wirs) <- paste0("I", 1:6)
+n_obs <- nrow(wirs)
+
+itens_curto <- c("Conversa individual", "Reunião de grupo", "Comitê permanente",
+                 "Comitê ad hoc", "Sindicato interno", "Sindicato externo")
+itens_txt <- c(
+  "Conversa informal com trabalhadores, individualmente",
+  "Reunião com grupos de trabalhadores",
+  "Comitê consultivo conjunto já existente",
+  "Comitê criado especialmente para a mudança",
+  "Representantes sindicais do estabelecimento",
+  "Dirigentes sindicais externos (remunerados)"
+)
+names(itens_curto) <- names(itens_txt) <- names(wirs)
+
+pat6      <- table(apply(wirs, 1, paste, collapse = ""))
+n_pat_obs <- length(pat6)
+
+# ---- os tres conjuntos do "funil" ----------------------------------------
+conj <- list(I1_I6 = wirs, I2_I6 = wirs[, 2:6], I3_I6 = wirs[, 3:6])
+rot_conj <- c(I1_I6 = "I1–I6", I2_I6 = "I2–I6 (sem I1)", I3_I6 = "I3–I6 (sem I1 e I2)")
+
+# pressuposto 1: tetracoricas, autovalores e analise paralela (unidimTest)
+tetra <- function(d) polycor::hetcor(as.data.frame(lapply(d, factor)), ML = FALSE,
+                                     std.err = FALSE)$correlations
+tet <- tetra(wirs)
+av  <- lapply(conj, function(d) eigen(tetra(d))$values)
+set.seed(2026)
+B_pa <- 200
+pa  <- lapply(conj, function(d) unidimTest(ltm(d ~ z1), B = B_pa))
+p_pa <- sapply(pa, `[[`, "p.value")
+# p de Monte Carlo: o menor valor possivel e 1/(B+1)
+txt_pa <- ifelse(p_pa <= 1 / (B_pa + 1) + 1e-12, paste("p ≤", fmt(1 / (B_pa + 1), 3)),
+                 paste("p =", ifelse(p_pa < 0.1, fmt(p_pa, 3), fmt(p_pa, 2))))
+
+# pressuposto 2: residuos (O-E)^2/E nas margens de 2 e 3 vias (regra 3,5)
+diag_margens <- function(fit, nomes, regra = 3.5) {
+  m2 <- margins(fit)$margins                       # [par, (i, j, Obs, Exp, resid), resposta]
+  r2 <- apply(m2[, 5, ], 1, max)
+  m3 <- margins(fit, type = "three-way")$margins   # [tripla, (i, j, k, Obs, Exp, resid), resposta]
+  r3 <- apply(m3[, 6, ], 1, max)
+  k  <- which.max(r2)
+  list(par = paste0(nomes[m2[k, 1, 1]], "–", nomes[m2[k, 2, 1]]),
+       max2 = max(r2), n2 = sum(r2 > regra), tot2 = length(r2),
+       max3 = max(r3), n3 = sum(r3 > regra), tot3 = length(r3))
+}
+fit_conj <- lapply(conj, function(d) ltm(d ~ z1))  # 2PL de um traco em cada conjunto
+mg <- Map(diag_margens, fit_conj, lapply(conj, names))
+
+# tabela 2x2 de I1 x I2: observado e esperado pelo modelo de um traco (6 itens)
+m6  <- margins(fit_conj$I1_I6)$margins
+k12 <- which(m6[, 1, 1] == 1 & m6[, 2, 1] == 2)
+obs12 <- c(`00` = sum(wirs$I1 == 0 & wirs$I2 == 0), `10` = sum(wirs$I1 == 1 & wirs$I2 == 0),
+           `01` = sum(wirs$I1 == 0 & wirs$I2 == 1), `11` = sum(wirs$I1 == 1 & wirs$I2 == 1))
+stopifnot(all(m6[k12, 3, ] == obs12))              # ordem das respostas: 00, 10, 01, 11
+esp12 <- setNames(m6[k12, 4, ], names(obs12))
+
+# pressuposto 3: proporcao de uso pelo escore nos DEMAIS itens (rest-score), com
+# escores agrupados ate cada grupo ter >= 10% da amostra
+grupos_rest <- function(r, minsize) {
+  u <- sort(unique(r)); g <- integer(length(u)); k <- 1; acc <- 0
+  for (t in seq_along(u)) {
+    g[t] <- k; acc <- acc + sum(r == u[t])
+    if (acc >= minsize) { k <- k + 1; acc <- 0 }
+  }
+  if (acc > 0 && k > 1) g[g == k] <- k - 1
+  lab <- tapply(u, g, function(x) if (length(x) == 1) x else paste0(min(x), "–", max(x)))
+  factor(lab[as.character(g[match(r, u)])], levels = lab)
+}
+mono_tab <- function(dados, minsize = floor(nrow(dados) / 10)) {
+  bind_rows(lapply(names(dados), function(i) {
+    r <- rowSums(dados[, setdiff(names(dados), i)])
+    g <- grupos_rest(r, minsize)
+    data.frame(item = i, x = as.numeric(tapply(r, g, mean)),
+               p = as.numeric(tapply(dados[[i]], g, mean)))
+  }))
+}
+quedas <- function(tab, minvi = 0.03)
+  sapply(split(tab$p, factor(tab$item, levels = unique(tab$item))),
+         function(p) sum(diff(p) < -minvi))
+mono <- lapply(conj, mono_tab)
+q_mono <- lapply(mono, quedas)
+p_i1 <- mono$I1_I6$p[mono$I1_I6$item == "I1"]
+p_i2 <- mono$I1_I6$p[mono$I1_I6$item == "I2"]
+desc <- lapply(conj, descript)                      # ponto-bisserial: script da aula
+
+# custo de retirar I2: informacao de I2 no 2PL de I2-I6 e confiabilidade
+cf5    <- coef(fit_conj$I2_I6)
+a_i2   <- cf5["I2", "Dscrmn"]
+eap    <- function(fit, d) factor.scores(fit, resp.patterns = d, method = "EAP")$score.dat
+conf   <- function(s) var(s$z1) / (var(s$z1) + mean(s$se.z1^2))   # confiabilidade empirica
+s5     <- eap(fit_conj$I2_I6, conj$I2_I6)
+
+# ---- calibracao no conjunto final ----------------------------------------
+itens <- conj$I3_I6
+itens_curto4 <- itens_curto[names(itens)]
+```
+
+## O banco WIRS e os seis itens
+
+::: {.small}
+**WIRS — *Workplace Industrial Relations Survey* (Reino Unido, 1990).** Pergunta feita ao
+gestor de cada estabelecimento:
+:::
+
+::: {.destaque .small}
+"Considere a mudança mais recente envolvendo a introdução de novas instalações, máquinas e
+equipamentos. **Houve discussões ou consultas de algum dos tipos deste cartão**, seja sobre a
+introdução da mudança, seja sobre a forma de implementá-la?"
+:::
+
+```{r}
+#| label: tab-itens
+data.frame(
+  Item = names(wirs),
+  `Canal de consulta` = unname(itens_txt),
+  `Usaram o canal` = pct(100 * colMeans(wirs), 1),
+  check.names = FALSE
+) |>
+  kable(align = "llr", row.names = FALSE)
+```
+
+::: {.small}
+Cada item vale **1** se o canal foi usado e **0** se não foi: **`r n_obs` estabelecimentos**
+(trabalhadores não manuais, introdução de novas máquinas), sem dados faltantes.
+:::
+
+## Os padrões de resposta {.smaller}
+
+```{r}
+#| label: tab-padroes-completa
+todos <- expand.grid(rep(list(c(0, 1)), 6))[, 6:1]          # I1 … I6
+names(todos) <- names(wirs)
+todos$pat  <- apply(todos, 1, paste, collapse = "")
+todos$freq <- as.integer(pat6[todos$pat]); todos$freq[is.na(todos$freq)] <- 0L
+todos      <- todos[order(todos$pat), ]
+top4       <- todos$freq >= 50
+pct_top4   <- 100 * sum(todos$freq[top4]) / n_obs
+# texto da legenda: sao 4 padroes e nenhum deles usa canal coletivo (I3-I6)
+stopifnot(sum(top4) == 4, all(rowSums(todos[top4, c("I3", "I4", "I5", "I6")]) == 0))
+
+realce <- function(txt, quando) {
+  ifelse(quando,
+         paste0("<span style='color:", cor_alerta, ";'>", txt, "</span>"),
+         as.character(txt))
+}
+bloco <- split(todos, rep(1:4, each = 16))
+tab <- do.call(cbind, lapply(bloco, function(b)
+  data.frame(Padrão = realce(b$pat, b$freq >= 50),
+             n      = realce(b$freq, b$freq >= 50))))
+names(tab) <- rep(c("Padrão", "n"), 4)
+kable(tab, format = "html", align = rep(c("l", "r"), 4), escape = FALSE,
+      row.names = FALSE, table.attr = "class='tab-padroes'")
+```
+
+::: {.small .legenda-centro .larga}
+**`r n_pat_obs` dos 64** padrões possíveis foram observados (ordem I1 … I6). Os quatro
+destacados, todos sem canal coletivo (I3–I6), somam `r pct(pct_top4, 0)` da amostra: só
+reunião de grupo (`r pat6[["010000"]]`), nenhum canal (`r pat6[["000000"]]`), só conversa
+informal (`r pat6[["100000"]]`) e as duas sem outro canal (`r pat6[["110000"]]`).
+:::
+
+## O traço latente
+
+::: {.destaque}
+$\theta$ = **grau de institucionalização da consulta aos trabalhadores** diante de uma
+mudança tecnológica no estabelecimento.
+:::
+
+- **$\theta$ baixo**: a consulta, quando ocorre, se dá por canais diretos e informais.
+- **$\theta$ alto**: o estabelecimento aciona **estruturas coletivas**, como comitês e
+  sindicatos.
+
+<!-- . . .
+
+**Por que TRI, e não simplesmente contar os canais usados?**
+
+::: {.small}
+- A contagem trata todos os canais como equivalentes e depende do conjunto de itens.
+- A TRI modela **cada item**: a **dificuldade** $b_i$ (quão "exigente" é o canal) e a
+  **discriminação** $a_i$ (quanto ele separa estabelecimentos com $\theta$ diferentes).
+- Cada estabelecimento recebe um $\hat\theta$ **com o seu erro-padrão**.
+::: -->
+
+## Modelos candidatos e pressupostos
+
+Para a resposta $X_{ij} \in \{0,1\}$ do estabelecimento $j$ ao item $i$:
+
+<!-- $$P(X_{ij} = 1 \mid \theta_j) = c_i + (1 - c_i)\,\frac{1}{1 + e^{-D a_i(\theta_j - b_i)}}, \qquad \theta_j \sim N(0, 1)$$ -->
+
+$$P(X_{ij} = 1 \mid \theta_j) = c_i + (1 - c_i)\,\frac{1}{1 + e^{-D a_i(\theta_j - b_i)}}$$
+
+::: {.small}
+- $b_i$, **dificuldade**: valor de $\theta$ em que a probabilidade de usar o canal é 50%;
+  quanto maior, mais "exigente" é o canal.
+- $a_i$, **discriminação**: proporcional à inclinação da curva em $b_i$; quanto maior,
+  melhor o item separa estabelecimentos com $\theta$ abaixo e acima de $b_i$.
+<!-- - No `ltm`, $D = 1$ (métrica logística). -->
+:::
+
+<!-- ::: {.small} -->
+| Modelo | Parâmetros do item | Restrição |
+|---|---|---|
+| **1PL** | $b_i$ e um $a$ comum | $a_i = a$ estimado, $c_i = 0$ |
+| **2PL** | $a_i,\ b_i$ | $c_i = 0$ |
+| **3PL** | $a_i,\ b_i,\ c_i$ | $c_i$, **piso**: chance de usar o canal mesmo com $\theta$ muito baixo. |
+<!-- ::: -->
+
+::: {.destaque .small}
+**Pressupostos** dos modelos acumulativos: (1) **unidimensionalidade**, um único $\theta$
+explica a associação entre os itens; (2) **independência local**, dado $\theta$, a resposta
+a um item não informa sobre outro; (3) **monotonicidade**, $P(X_i = 1 \mid \theta)$ cresce
+com $\theta$.
+:::
+
+## Pressuposto 1 — unidimensionalidade
+
+:::: {.columns}
+::: {.column width="50%"}
+<!-- ::: {.panel-tabset} -->
+### Correlações tetracóricas
+
+```{r}
+#| label: plot-tetra
+#| fig-width: 5.6
+#| fig-height: 4.7
+niveis <- names(wirs)
+tet_df <- as.data.frame(as.table(tet)) |>
+  setNames(c("i", "j", "r")) |>
+  mutate(li = match(i, niveis), co = match(j, niveis)) |>
+  filter(li >= co) |>
+  mutate(cor_txt = ifelse(abs(r) > 0.6, "white", "grey15"))
+
+ggplot(tet_df, aes(j, i, fill = r)) +
+  geom_tile(colour = "white", linewidth = 1) +
+  geom_text(aes(label = fmt(r, 2), colour = cor_txt), size = 3.8) +
+  scale_colour_identity() +
+  scale_x_discrete(limits = niveis) +
+  scale_y_discrete(limits = rev(niveis)) +
+  scale_fill_gradient2(low = cor_alerta, mid = "white", high = cor_principal,
+                       midpoint = 0, limits = c(-1, 1)) +
+  labs(title = "Correlações tetracóricas", x = NULL, y = NULL) +
+  theme(legend.position = "hidden", panel.grid = element_blank())
+```
+
+<!-- ### Análise paralela
+
+```{r}
+#| label: plot-paralela
+#| fig-width: 5.8
+#| fig-height: 4.7
+# autovalores observados x simulados sob um unico traco (unidimTest, como na aula 4)
+pa_df <- bind_rows(lapply(names(pa), function(k) {
+  u <- pa[[k]]
+  data.frame(conj = paste0(sub(" .*", "", rot_conj[[k]]), "\n", txt_pa[[k]]),
+             pos = seq_along(u$Tobs), obs = u$Tobs,
+             sim = colMeans(u$T.boot),
+             lo = apply(u$T.boot, 2, quantile, 0.025),
+             hi = apply(u$T.boot, 2, quantile, 0.975))
+}))
+pa_df$conj <- factor(pa_df$conj, levels = unique(pa_df$conj))
+
+ggplot(pa_df, aes(pos)) +
+  geom_ribbon(aes(ymin = lo, ymax = hi), fill = "grey80", alpha = 0.7) +
+  geom_line(aes(y = sim, colour = "simulado (1 traço)"), linetype = "22", linewidth = 0.9) +
+  geom_line(aes(y = obs, colour = "observado"), linewidth = 1.1) +
+  geom_point(aes(y = obs, colour = "observado"), size = 2) +
+  geom_point(data = subset(pa_df, pos == 2), aes(y = obs), colour = cor_alerta,
+             size = 3.6, shape = 21, stroke = 1.4) +
+  facet_wrap(~ conj, nrow = 1, scales = "free_x") +
+  scale_colour_manual(values = c(observado = cor_principal,
+                                 `simulado (1 traço)` = "grey35")) +
+  scale_x_continuous(breaks = 1:6) +
+  labs(title = "Autovalores: observados × simulados",
+       subtitle = paste0("comunalidades na diagonal, por isso diferem da tabela\n",
+                         "faixa = 95% dos ", B_pa, " bancos simulados; círculo = 2º autovalor"),
+       x = "posição do autovalor", y = NULL)
+```
+::: -->
+
+::: 
+
+::: {.column width="50%"}
+::: {.small}
+Se um único traço explicasse as respostas, as correlações seriam **todas
+positivas**. I1 é **negativa** com I2 e I4; 
+I2 quase não se associa a I3, I5 e I6.
+
+```{r}
+#| label: tab-autovalores
+data.frame(
+  Itens = rot_conj,
+  `1º autovalor (% explicada)` = sapply(av, \(v) paste0(fmt(v[1], 2), " (", pct(100 * v[1] / length(v)), ")")),
+  `2º autovalor` = sapply(av, \(v) fmt(v[2], 2)),
+  `Análise paralela` = txt_pa,
+  check.names = FALSE
+) |>
+  kable(format = "html", align = "lrrr", row.names = FALSE,
+        table.attr = "class='funil'")
+```
+
+- **Autovalores**: com os seis itens, **dois** passam de 1, sinal de uma
+  segunda dimensão; sem I1, o 2º ainda fica no limite (`r fmt(av$I2_I6[2], 2)`).
+- **Análise paralela** (`unidimTest`, aba ao lado): compara o 2º autovalor com o de `r B_pa` bancos
+  simulados com **um único traço**. p pequeno = há uma 2ª dimensão além do acaso. **Só
+  I3–I6 não rejeita a unidimensionalidade.**
+:::
+:::
+::::
+
+## Pressuposto 2 — independência local
+
+:::: {.columns}
+::: {.column width="46%"}
+::: {.small}
+**O teste:** ajusta-se o modelo de um traço e compara-se, para cada par de itens, a tabela
+2×2 observada com a esperada. Se $\theta$ explica tudo, as duas coincidem.
+:::
+
+```{r}
+#| label: tab-i1i2
+cel <- function(k) paste0("<b>", obs12[[k]], "</b><br><span class='esp'>esperado ",
+                          fmt(esp12[[k]], 0), "</span>")
+tab12 <- data.frame(c("<b>Usa I1</b>", "<b>Não usa I1</b>"),
+                    c(cel("11"), cel("01")), c(cel("10"), cel("00")))
+kable(tab12, format = "html", escape = FALSE, align = "lcc",
+      col.names = c("", "Usa I2", "Não usa I2"), table.attr = "class='tab-2x2'")
+```
+
+::: {.alerta .small style="margin-top: .9em;"}
+Só **`r obs12[["11"]]`** estabelecimentos usam conversa individual **e** reunião de grupo;
+o modelo esperava **`r fmt(esp12[["11"]], 0)`**. Eles usam **um ou outro, não os dois**.
+:::
+:::
+
+::: {.column width="54%"}
+::: {.small}
+**Resíduo** $(O-E)^2/E$ em cada casela (`margins()`, pacote `ltm`). Acima de **3,5**
+indica que o modelo não reproduz a associação do par. É a mesma ideia das "correlações
+residuais ≈ 0" da aula 2, adaptada a itens binários.
+
+```{r}
+#| label: tab-margens
+data.frame(
+  Itens = rot_conj,
+  `Maior resíduo (par)` = sapply(mg, \(m) if (m$max2 > 3.5)
+    paste0(fmt(m$max2, 1), " (", m$par, ")") else fmt(m$max2, 2)),
+  `Pares > 3,5` = sapply(mg, \(m) paste(m$n2, "de", m$tot2)),
+  `Triplas > 3,5` = sapply(mg, \(m) paste(m$n3, "de", m$tot3)),
+  check.names = FALSE
+) |>
+  kable(format = "html", align = "lrrr", row.names = FALSE,
+        table.attr = "class='funil'")
+```
+
+- Com os seis itens, o par **I1–I2** chega a `r fmt(mg$I1_I6$max2, 1)`, mais de dez
+  vezes a regra.
+- Sem I1, ainda sobra o par **`r mg$I2_I6$par`** (`r fmt(mg$I2_I6$max2, 1)`).
+- **Só em I3–I6** todos os pares e triplas ficam abaixo da regra.
+:::
+:::
+::::
+
+## Pressuposto 3 — monotonicidade
+
+:::: {.columns}
+::: {.column width="57%"}
+::: {.panel-tabset}
+### Curvas de uso
+
+```{r}
+#| label: plot-monotonia
+#| fig-width: 6.3
+#| fig-height: 4.6
+m6t <- mono$I1_I6 |>
+  mutate(destaque = case_when(item == "I1" ~ "I1", item == "I2" ~ "I2", TRUE ~ "outros"),
+         item = factor(item, levels = names(wirs),
+                       labels = paste(names(wirs), itens_curto, sep = " · ")))
+ggplot(m6t, aes(x, p, group = item, colour = destaque)) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 2.2) +
+  facet_wrap(~ item, nrow = 2) +
+  scale_colour_manual(values = c(I1 = cor_alerta, I2 = cor_aviso, outros = cor_principal),
+                      guide = "none") +
+  scale_x_continuous(breaks = 0:5, limits = c(0, 5)) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1), limits = c(0, 0.8)) +
+  labs(title = "Proporção de uso pelo nº de outros canais usados",
+       subtitle = "Escores agrupados até cada grupo ter ≥ 10% da amostra",
+       x = "nº de outros canais usados", y = NULL)
+```
+
+### Saída do `descript()`
+
+```{r}
+#| label: descript-codigo
+#| echo: true
+#| eval: false
+descript(wirs) 
+```
+
+```{r}
+#| label: tab-descript
+d6  <- desc$I1_I6
+alf <- d6$alpha[, 1]                       # 1a linha: todos; demais: excluindo cada item
+sobe <- alf[-1] > alf[1]                   # itens cuja retirada aumenta o alfa
+stopifnot(identical(names(wirs)[sobe], c("I1", "I2")))   # texto da legenda
+cor_item <- c(I1 = cor_alerta, I2 = cor_aviso)
+pinta <- function(x, item) ifelse(item %in% names(cor_item),
+  paste0("<span style='color:", cor_item[item], ";font-weight:600;'>", x, "</span>"), x)
+data.frame(
+  Item = pinta(names(wirs), names(wirs)),
+  `Uso` = pct(100 * d6$perc[, "1"], 0),
+  `Ponto-bisserial (com o item)` = fmt(d6$bisCorr, 2),
+  `Ponto-bisserial (item excluído)` = pinta(fmt(d6$ExBisCorr, 2), names(wirs)),
+  `α sem o item` = pinta(fmt(alf[-1], 2), names(wirs)),
+  check.names = FALSE
+) |>
+  kable(format = "html", escape = FALSE, align = "lrrrr", row.names = FALSE,
+        table.attr = "class='funil simples'")
+```
+
+::: {.small}
+$\alpha$ de Cronbach com os seis itens = `r fmt(alf[1], 2)`. Só a retirada de **I1**
+(`r fmt(alf[2], 2)`) ou de **I2** (`r fmt(alf[3], 2)`) **aumenta** o $\alpha$; retirar
+qualquer canal coletivo o reduz.
+:::
+:::
+:::
+
+::: {.column width="43%"}
+::: {.small}
+Nos modelos acumulativos, quem tem $\theta$ maior tem mais
+chance de usar o canal. Antes de calibrar, $\theta$ é aproximado pelo **nº de outros
+canais usados**: a curva de cada item deve subir.
+
+- **I1 sobe e depois cai** (`r pct(100 * max(p_i1))` → `r pct(100 * tail(p_i1, 1))`):
+  não pode ser representado por um único traço, e a monotonicidade falha.
+- **I2 é quase plana** (`r pct(100 * min(p_i2))` a `r pct(100 * max(p_i2))`) quando a
+  contagem inclui I1; sem I1 ela sobe, mas com discriminação baixa ($a$ = `r fmt(a_i2, 2)`).
+- **I3–I6 sobem** em todos os grupos.
+
+A aba **`descript()`** (script da aula) confirma: a ponto-bisserial de cada item com os
+demais é `r fmt(desc$I1_I6$ExBisCorr[1], 2)` em I1 e `r fmt(desc$I1_I6$ExBisCorr[2], 2)`
+em I2, contra `r fmt(min(desc$I1_I6$ExBisCorr[3:6]), 2)` a
+`r fmt(max(desc$I1_I6$ExBisCorr[3:6]), 2)` nos demais.
+:::
+:::
+::::
+
+## Decisão: o traço é medido por I3–I6
+
+```{r}
+#| label: tab-decisao
+mono_ok  <- sapply(q_mono, \(q) all(q == 0))
+mono_txt <- c(I1_I6 = "I1 sobe e cai", I2_I6 = "todas crescentes",
+              I3_I6 = "todas crescentes")
+li_txt <- sapply(mg, \(m) if (m$n2 + m$n3 == 0) "nenhum resíduo > 3,5" else
+  paste0(m$par, " = ", fmt(m$max2, 1), " e ", m$n3, " triplas > 3,5"))
+tab_dec <- sapply(names(conj), \(k) c(       # linhas: pressupostos; colunas: conjuntos
+  marca(p_pa[[k]] > 0.05, txt_pa[[k]]),
+  marca(mg[[k]]$n2 + mg[[k]]$n3 == 0, li_txt[[k]]),
+  marca(mono_ok[[k]], mono_txt[[k]])
+))
+data.frame(
+  Pressuposto = c("Unidimensionalidade (análise paralela)", "Independência local (margens)",
+                  "Monotonicidade (uso pelo escore nos demais)"),
+  tab_dec, check.names = FALSE
+) |>
+  setNames(c("Pressuposto", rot_conj)) |>
+  kable(format = "html", escape = FALSE, align = "lccc", row.names = FALSE,
+        table.attr = "class='funil decisao'")
+```
+
+:::: {.columns}
+::: {.column width="60%"}
+::: {.small}
+**O que I1 e I2 têm em comum:** são canais **diretos**, sem representação dos
+trabalhadores. Seguem outra lógica, já que quem usa um tende a não usar o outro, e se
+associam pouco aos canais coletivos. Os canais que variam juntos, como pede um único
+traço, são **comitês e sindicatos** (I3–I6).
+:::
+:::
+
+::: {.column width="40%"}
+::: {.small}
+<!-- **Retirar I2 não custa precisão:** com $a = `r fmtm(a_i2, 2)`$, sua informação não passa
+de $a^2/4 = `r fmtm(a_i2^2 / 4, 2)`$ em nenhum ponto de $\theta$. A confiabilidade fica em
+`r fmt(conf(s5), 2)` com I2 e `r fmt(conf(eap(fit_conj$I3_I6, itens)), 2)` sem ele, e os
+$\hat\theta$ das duas versões têm correlação de
+`r fmt(cor(s5$z1, eap(fit_conj$I3_I6, itens)$z1), 2)`. -->
+:::
+:::
+::::
+
+::: {.destaque .small}
+**Seguimos com os quatro canais coletivos — I3, I4, I5 e I6.**
+:::
+
+# Calibração dos itens I3–I6 {background-color="#0d3b66"}
+
+
+## Três modelos encaixados
+
+```{r}
+#| label: ajustes
+#| echo: true
+mod_1pl <- rasch(itens)          # 1PL: um a comum, estimado
+mod_2pl <- ltm(itens ~ z1)       # 2PL: a_i livres
+mod_3pl <- tpm(itens)            # 3PL: acrescenta o piso c_i
+```
+
+```{r}
+#| label: tab-ajuste
+mods <- list(mod_1pl, mod_2pl, mod_3pl)
+trv  <- list(anova(mod_1pl, mod_2pl), anova(mod_2pl, mod_3pl))
+mgm  <- lapply(mods, diag_margens, nomes = names(itens))
+aic  <- sapply(mods, AIC); bic <- sapply(mods, BIC)
+neg  <- function(x, melhor) ifelse(melhor, paste0("<b>", x, "</b>"), x)
+c3   <- coef(mod_3pl)
+ep3  <- summary(mod_3pl)$coefficients[, "std.err"]
+```
+
+:::: {.columns}
+::: {.column width="60%"}
+```{r}
+#| label: tab-modelos
+data.frame(
+  Modelo = c("1PL (a comum)", "2PL", "3PL"),
+  `nº par.` = sapply(mods, \(m) attr(logLik(m), "df")),
+  AIC = neg(fmt(aic, 1), aic == min(aic)),
+  BIC = neg(fmt(bic, 1), bic == min(bic)),
+  `TRV vs. anterior` = c("—", sapply(trv, \(a) paste0(fmt(a$LRT, 1), " (", a$df, " gl), p = ",
+                                                    fmt_p(a$p.value)))),
+  check.names = FALSE
+) |>
+  kable(format = "html", escape = FALSE, align = "lrrrl", row.names = FALSE)
+```
+:::
+
+::: {.column width="40%"}
+```{r}
+#| label: tab-c-3pl
+eh_i4 <- rownames(c3) == "I4"
+pinta4 <- function(x) ifelse(eh_i4, paste0("<span style='color:", cor_alerta,
+                                           ";font-weight:600;'>", x, "</span>"), x)
+data.frame(
+  Item = pinta4(rownames(c3)),
+  `c (EP)` = pinta4(paste0(fmt(c3[, "Gussng"], 2), " (",
+                           fmt(ep3[paste0("Gussng.", rownames(c3))], 2), ")")),
+  `a (EP)` = pinta4(paste0(fmt(c3[, "Dscrmn"], 2), " (",
+                           fmt(ep3[paste0("Dscrmn.", rownames(c3))], 2), ")")),
+  check.names = FALSE
+) |>
+  kable(format = "html", escape = FALSE, align = "lrr", row.names = FALSE,
+        caption = "3PL: piso c e discriminação a")
+```
+:::
+::::
+
+```{r}
+#| label: aux-3pl
+set.seed(1)
+mod_3pl_b <- tpm(itens, start.val = "random")                  # outra partida para o 3PL
+mod_piso4 <- tpm(itens, constraint = cbind(c(1, 3, 4), 1, 0))  # piso so em I4
+ep_piso4  <- summary(mod_piso4)$coefficients["Dscrmn.I4", "std.err"]
+th_piso4  <- factor.scores(mod_piso4, resp.patterns = itens, method = "EAP")$score.dat$z1
+th_2pl    <- factor.scores(mod_2pl, resp.patterns = itens, method = "EAP")$score.dat$z1
+rho_piso4 <- cor(th_piso4, th_2pl, method = "spearman")
+r2pl      <- residuals(mod_2pl, order = FALSE)
+so_i4     <- r2pl[r2pl[, "I3"] == 0 & r2pl[, "I4"] == 1 & r2pl[, "I5"] == 0 & r2pl[, "I6"] == 0, ]
+```
+
+::: {.small}
+Estimação por **máxima verossimilhança marginal** (`ltm`) e comparação com `anova()`, como
+no script da aula. Cada modelo é caso particular do seguinte, o que permite o **TRV**. À
+direita, os pisos estimados no 3PL: $c \approx 0$ em I3, I5 e I6, e só **I4** tem piso,
+com uma discriminação de erro-padrão muito alta.
+:::
+
+## Qual modelo escolher?
+
+::: {.compacto .small}
+1. **BIC favorece o 1PL** Entretanto, o TRV rejeita a discriminação comum (1PL → 2PL:
+   p = `r fmt_p(trv[[1]]$p.value)`), e $a$ vai de `r fmt(min(coef(mod_2pl)[, "Dscrmn"]), 2)`
+   a `r fmt(max(coef(mod_2pl)[, "Dscrmn"]), 2)`. O 1PL também apresentou
+   `r mgm[[1]]$n3` das 4 triplas de itens com resíduo acima de 3,5.
+<!-- 2. **O 2PL reproduz as associações.** Nenhum par ou tripla de itens passa de 3,5 (máximos
+   de `r fmt(mgm[[2]]$max2, 2)` e `r fmt(mgm[[2]]$max3, 2)`). O único desvio visível está em
+   I4: `r so_i4[["Obs"]]` estabelecimentos usam **só** o comitê ad hoc, e o 2PL esperava `r fmt(so_i4[["Exp"]], 0)`. -->
+2. **TRV e AIC favorecem 3PL** Entretanto, há um parâmetro mal identificado. Pela tabela anterior,
+   $c \approx 0$ em I3, I5 e I6. Só I4 ganha um piso ($c$ = `r fmt(c3[2, "Gussng"], 2)`), e o seu $a$ fica indeterminado:
+   `r fmt(c3[2, "Dscrmn"], 1)` com **EP = `r fmt(ep3["Dscrmn.I4"], 1)`**.
+   <!-- ou
+   `r fmt(coef(mod_3pl_b)[2, "Dscrmn"], 1)` partindo de outros valores, com a mesma
+   verossimilhança.  -->
+   <!-- Mesmo pondo o piso só em I4, o $a$ de I4 continua indeterminado (EP = `r fmt(ep_piso4, 0)`) e a ordem dos
+   $\hat\theta$ não muda (Spearman = `r fmt(rho_piso4, 3)`). -->
+   Além disso, mesmo que não houvesse instabilidade, o TRV está mal especificado para comparar modelos com 3PL, pois como $c_j \geq 0$, a hipótese nula $c_j=0$ está na fronteira do espaço paramétrico. (**Brown, Templin e Cohen (2015)**)
+:::
+
+::: {.destaque .small}
+**2PL**: Parece ser o modelo preferível, porém não temos uma justificativa sólida.
+:::
+
+```{r}
+#| include: false
+#| 
+set.seed(2024)
+
+## ---- dados -------------------------------------------------------------
+## O objeto `itens` (0/1, 4 itens) precisa existir no ambiente.
+## Se necessário, carregue-o aqui, por exemplo:
+## itens <- readRDS("itens.rds")
+itens <- as.data.frame(itens)
+n     <- nrow(itens)
+nit   <- ncol(itens)
+K     <- 10                              # folds
+R     <- 10                              # repetições da CV
+A_CUT <- 10                              # corte de discriminação (decisão do analista)
+C_CUT <- 0.5                             # corte do piso (decisão do analista)
+
+## LRT 1PL vs 2PL (valor obtido com anova(mod_1pl, mod_2pl))
+lrt_val <- 15.06
+lrt_gl  <- 3
+lrt_p   <- pchisq(lrt_val, lrt_gl, lower.tail = FALSE)
+
+## ---- padrões de resposta e quadratura ---------------------------------
+pats    <- as.matrix(expand.grid(rep(list(0:1), nit)))     # 16 x 4
+key     <- function(m) apply(m, 1, paste, collapse = "")
+pat_key <- key(pats)
+idx_obs <- match(key(as.matrix(itens)), pat_key)
+
+Q <- seq(-6, 6, length.out = 81)
+w <- dnorm(Q); w <- w / sum(w)
+
+pat_prob <- function(par) {
+  P <- sapply(seq_len(nrow(par)), function(j)
+         par[j, "c"] + (1 - par[j, "c"]) * plogis(par[j, "a"] * (Q - par[j, "b"])))
+  P  <- pmin(pmax(P, 1e-10), 1 - 1e-10)
+  LP <- log(P) %*% t(pats) + log(1 - P) %*% t(1 - pats)
+  p  <- colSums(w * exp(LP))
+  p / sum(p)
+}
+
+## ---- ajuste do 1PL e 2PL (usados na comparação preditiva) --------------
+to_par <- function(cf, tem_c = FALSE)
+  cbind(c = if (tem_c) cf[, "Gussng"] else 0,
+        b = cf[, "Dffclt"],
+        a = cf[, "Dscrmn"])
+
+par_ok <- function(par)
+  is.matrix(par) && all(is.finite(par)) &&
+  all(abs(par[, "a"]) < A_CUT) && all(par[, "c"] >= 0 & par[, "c"] < C_CUT)
+
+fit_model <- function(d, tipo) {
+  tryCatch({
+    m <- switch(tipo,
+      "1PL" = rasch(d, constraint = NULL),
+      "2PL" = ltm(d ~ z1))
+    if (!is.null(m$convergence) && m$convergence != 0) return(NULL)
+    par <- to_par(coef(m))
+    if (!par_ok(par)) return(NULL)
+    par
+  }, error = function(e) NULL)
+}
+
+## ---- diagnóstico do 3PL (ajusta e registra parâmetros, sem prever) -----
+diag_3pl <- function(d) {
+  out <- data.frame(amax = NA_real_, cmax = NA_real_, item = NA_character_,
+                    conv = NA_integer_, erro = FALSE)
+  m <- tryCatch(tpm(d, type = "latent.trait"), error = function(e) NULL)
+  if (is.null(m)) { out$erro <- TRUE; return(out) }
+  cf <- coef(m)
+  a  <- cf[, "Dscrmn"]; cc <- cf[, "Gussng"]
+  out$conv <- if (is.null(m$convergence)) 0L else as.integer(m$convergence)
+  out$amax <- if (all(is.finite(a))) max(abs(a)) else Inf
+  out$cmax <- if (all(is.finite(cc))) max(cc) else Inf
+  out$item <- rownames(cf)[which.max(abs(a))]
+  out
+}
+
+## ---- CV repetida, folds por pessoa ------------------------------------
+modelos <- c("1PL", "2PL")
+logp    <- array(NA_real_, c(n, 2, R), dimnames = list(NULL, modelos, NULL))
+brier   <- logp
+fold_ll <- array(NA_real_, c(K, R, 2), dimnames = list(NULL, NULL, modelos))
+d3_list <- vector("list", K * R)
+cont    <- 0
+
+for (r in 1:R) {
+  folds <- sample(rep(1:K, length.out = n))
+  for (k in 1:K) {
+    tr <- which(folds != k); te <- which(folds == k)
+    dtr <- itens[tr, , drop = FALSE]
+
+    ## 3PL: só diagnóstico de estabilidade
+    cont <- cont + 1
+    d3_list[[cont]] <- cbind(r = r, k = k, diag_3pl(dtr))
+
+    ## 1PL e 2PL: desempenho preditivo
+    for (m in modelos) {
+      par <- fit_model(dtr, m)
+      if (is.null(par)) next
+      p  <- pat_prob(par)
+      po <- p[idx_obs[te]]
+      logp[te, m, r]  <- log(po)
+      brier[te, m, r] <- sum(p^2) - 2 * po + 1
+      fold_ll[k, r, m] <- mean(log(po))
+    }
+  }
+}
+d3 <- do.call(rbind, d3_list)
+
+## ---- estabilidade do 3PL ------------------------------------------------
+inst_cut <- function(acut)
+  is.na(d3$amax) | d3$erro | d3$conv != 0 | d3$amax >= acut | d3$cmax >= C_CUT
+
+pct <- function(x) formatC(100 * mean(x), format = "f", digits = 0, decimal.mark = ",")
+
+inst_main <- inst_cut(A_CUT)
+pct_inst  <- mean(inst_main)
+
+tab_inst <- data.frame(
+  Critério = c("Discriminação máxima ≥ 5",
+               paste0("Discriminação máxima ≥ ", A_CUT, " (corte adotado)"),
+               "Discriminação máxima ≥ 20",
+               paste0("Piso (c) máximo ≥ ", gsub("\\.", ",", C_CUT)),
+               "Não convergiu / erro",
+               "Instável por qualquer critério (corte adotado)"),
+  `% dos folds` = paste0(c(
+    pct(!is.na(d3$amax) & d3$amax >= 5),
+    pct(!is.na(d3$amax) & d3$amax >= A_CUT),
+    pct(!is.na(d3$amax) & d3$amax >= 20),
+    pct(!is.na(d3$cmax) & d3$cmax >= C_CUT),
+    pct(d3$erro | (!is.na(d3$conv) & d3$conv != 0)),
+    pct(inst_main)), "%"),
+  check.names = FALSE)
+
+## item com maior discriminação nos folds que passaram do corte
+it_flag  <- d3$item[!is.na(d3$amax) & d3$amax >= A_CUT]
+item_top <- if (length(it_flag)) names(sort(table(it_flag), decreasing = TRUE))[1] else "—"
+item_pct <- if (length(it_flag)) pct(it_flag == item_top) else "0"
+item_pct <- if (length(it_flag)) formatC(100 * mean(it_flag == item_top),
+                                         format = "f", digits = 0) else "0"
+
+## ---- medidas de erro (1PL e 2PL) ----------------------------------------
+logloss_i <- -apply(logp,  c(1, 2), mean, na.rm = TRUE)
+brier_i   <-  apply(brier, c(1, 2), mean, na.rm = TRUE)
+logloss_i[is.nan(logloss_i)] <- NA
+brier_i[is.nan(brier_i)]     <- NA
+
+resumo <- data.frame(
+  modelo   = modelos,
+  logloss  = colMeans(logloss_i, na.rm = TRUE),
+  deviance = 2 * colMeans(logloss_i, na.rm = TRUE),
+  brier    = colMeans(brier_i, na.rm = TRUE))
+
+## ---- Nadeau-Bengio: 2PL vs 1PL (comparação única, sem ajuste de Holm) ---
+nb_test <- function(d, ratio) {
+  d <- d[is.finite(d)]; J <- length(d)
+  if (J < 3) return(c(J = J, dif_media = NA, t = NA, gl = NA, p = NA))
+  t <- mean(d) / sqrt((1 / J + ratio) * var(d))
+  c(J = J, dif_media = mean(d), t = t, gl = J - 1,
+    p = 2 * pt(-abs(t), J - 1))
+}
+
+ratio <- 1 / (K - 1)
+d_fold <- as.vector(fold_ll[, , "2PL"] - fold_ll[, , "1PL"])
+nb     <- nb_test(d_fold, ratio)
+
+## ---- formatação ----------------------------------------------------------
+fmt_p <- function(p) ifelse(p < 0.001, "<0,001",
+                            formatC(p, format = "f", digits = 3, decimal.mark = ","))
+fmt_n <- function(x, d = 4) formatC(x, format = "f", digits = d, decimal.mark = ",")
+
+tab_erro <- data.frame(
+  Modelo     = resumo$modelo,
+  `Log-loss` = fmt_n(resumo$logloss),
+  Deviance   = fmt_n(resumo$deviance),
+  Brier      = fmt_n(resumo$brier),
+  check.names = FALSE)
+
+tab_nb <- data.frame(
+  Comparação   = "2PL vs 1PL",
+  `Δ log-loss` = fmt_n(nb["dif_media"]),
+  `Δ Brier`    = fmt_n(resumo$brier[1] - resumo$brier[2]),
+  t            = formatC(nb["t"], format = "f", digits = 2, decimal.mark = ","),
+  gl           = nb["gl"],
+  p            = fmt_p(nb["p"]),
+  check.names = FALSE)
+
+ganho_pct  <- 100 * nb["dif_media"] / resumo$logloss[1]
+ganho_esp  <- lrt_val / (2 * n) - 3 / n
+```
+
+## Apoiando a escolha por Validação Cruzada
+
+::::: columns
+:::: {.column width="46%"}
+
+::: {.destaque .small}
+`r pct(inst_main)`% dos `r K * R` ajustes do 3PL ultrapassaram o corte de validação (discriminação ≥ `r A_CUT`, piso ≥ `r gsub("\\.", ",", C_CUT)` ou não convergência)
+:::
+
+```{r}
+kable(tab_inst, align = "lc")
+```
+::::
+
+:::: {.column width="54%"}
+```{r}
+#| fig-width: 6.4
+#| fig-height: 3.3
+#| fig-align: center
+amx <- d3$amax[is.finite(d3$amax)]
+par(mar = c(4, 4, 1.5, 1), cex = 0.9)
+hist(log10(pmax(amx, 0.1)), breaks = 25, col = "grey75", border = "white",
+     xaxt = "n", main = "", xlab = "Maior discriminação estimada no fold (escala log)",
+     ylab = "Nº de folds")
+axis(1, at = log10(c(1, 2, 5, 10, 20, 50, 100)),
+     labels = c(1, 2, 5, 10, 20, 50, 100))
+abline(v = log10(A_CUT), col = "#b03a2e", lwd = 2, lty = 2)
+text(log10(A_CUT), par("usr")[4] * 0.92, "corte", col = "#b03a2e", pos = 4, cex = 0.9)
+```
+
+::: {.small}
+-   A maior discriminação foi do item **`r item_top`** em `r item_pct`% dos folds acima do corte.
+-   No ajuste completo: discriminação do item 4 = 7,8 (EP = 19,8) e pisos dos itens 3, 5 e 6 na fronteira (c ≈ 0): parâmetros fracamente identificados.
+-   Com base nessa instabilidade, o 3PL foi **descartado** como possível melhor ajuste.
+:::
+::::
+:::::
+
+
+## Apoiando a escolha por Validação Cruzada
+
+::::: columns
+:::: {.column width="52%"}
+::: {.small}
+**Erro preditivo fora da amostra**
+:::
+
+```{r}
+kable(tab_erro, align = "lccc")
+```
+
+::: {.small}
+Menor = melhor. Log-loss = −log P(padrão de resposta), média por pessoa.
+:::
+
+::: {.small}
+**Teste de Nadeau–Bengio** (`r K`×`r R` folds, comparação única)
+:::
+
+```{r}
+kable(tab_nb, align = "lccccc")
+```
+
+::: {.small}
+Δ > 0: indica que 2PL prevê melhor, porém não significativo.
+:::
+::::
+
+:::: {.column width="48%"}
+::: {.small}
+**Leitura dos resultados**
+
+-   **Ganho preditivo:** o 2PL reduz o log-loss e o Brier também é menor.
+-   **Significância:** o teste de Nadeau–Bengio não rejeita igualdade (p = `r fmt_p(nb["p"])`).
+:::
+
+::: {.destaque .small}
+
+**Decisão:** o 2PL é adotado, pois o LRT rejeita discriminações iguais, a CV não indica sobreajuste e o 3PL é instável com 4 itens; Entretanto, 1PL também é uma escolha razoável.
+
+::: 
+::::
+:::::
+
+
+
+## Parâmetros calibrados (2PL)
+
+```{r}
+#| label: tab-param
+
+pct  <- function(x, d = 0) paste0(fmt(x, d), "%")
+
+cf  <- coef(mod_2pl)
+ep2 <- summary(mod_2pl)$coefficients[, "std.err"]
+ord <- order(cf[, "Dffclt"])
+data.frame(
+  Item = rownames(cf), Canal = itens_curto4,
+  `Dificuldade b (EP)` = paste0(fmt(cf[, "Dffclt"], 2), " (", fmt(ep2[paste0("Dffclt.", rownames(cf))], 2), ")"),
+  `Discriminação a (EP)` = paste0(fmt(cf[, "Dscrmn"], 2), " (", fmt(ep2[paste0("Dscrmn.", rownames(cf))], 2), ")"),
+  `P(uso | θ = 0)` = pct(100 * plogis(cf[, "Dscrmn"] * (0 - cf[, "Dffclt"])), 0),
+  check.names = FALSE
+)[ord, ] |>
+  kable(align = "llrrr", row.names = FALSE)
+```
+
+:::: {.columns}
+::: {.column width="55%"}
+```{r}
+#| label: plot-cci
+#| fig-width: 6.2
+#| fig-height: 3.6
+grade <- seq(-4, 4, length.out = 400)
+rot4  <- sprintf("%s · %s", rownames(cf), itens_curto4)
+cci <- bind_rows(lapply(seq_len(nrow(cf)), function(i)
+  data.frame(theta = grade, p = plogis(cf[i, "Dscrmn"] * (grade - cf[i, "Dffclt"])),
+             item = rot4[i])))
+ggplot(cci, aes(theta, p, colour = item)) +
+  geom_hline(yintercept = 0.5, linetype = "dotted", colour = "grey55") +
+  geom_line(linewidth = 1.1) +
+  geom_point(data = data.frame(theta = cf[, "Dffclt"], p = 0.5, item = rot4), size = 2.4) +
+  scale_colour_manual(values = paleta_itens) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  labs(title = "Curvas características dos itens", x = expression(theta),
+       y = "P(usar o canal)") +
+  guides(colour = guide_legend(nrow = 2)) +
+  theme(legend.text = element_text(size = 10))
+```
+:::
+
+::: {.column width="45%"}
+::: {.small}
+- **$b$**: valor de $\theta$ em que a probabilidade de usar o canal é 50% (pontos no
+  gráfico). Todos os $b$ são **positivos**: na média ($\theta = 0$), nenhum canal coletivo
+  é usado pela maioria.
+- **Ordem de dificuldade:** `r paste(tolower(itens_curto4[ord]), collapse = " → ")`.
+- **$a$**: inclinação da curva. **Sindicato interno** e **comitê permanente** separam
+  melhor os estabelecimentos; o **comitê ad hoc** é o menos discriminativo.
+:::
+:::
+::::
+
+## Informação e precisão da escala
+
+```{r}
+#| label: plot-info
+#| fig-height: 3.4
+info_i <- bind_rows(lapply(seq_len(nrow(cf)), function(i) {
+  a <- cf[i, "Dscrmn"]; b <- cf[i, "Dffclt"]; P <- plogis(a * (grade - b))
+  data.frame(theta = grade, I = a^2 * P * (1 - P), item = rot4[i])
+}))
+info_tot <- info_i |> group_by(theta) |> summarise(I = sum(I), .groups = "drop") |>
+  mutate(EP = 1 / sqrt(I))
+th_max <- info_tot$theta[which.max(info_tot$I)]
+
+g1 <- ggplot(info_i, aes(theta, I, colour = item)) +
+  geom_line(linewidth = 1) +
+  scale_colour_manual(values = paleta_itens) +
+  labs(title = "Informação de cada item", x = expression(theta), y = expression(I[i](theta))) +
+  guides(colour = guide_legend(nrow = 2)) +
+  theme(legend.text = element_text(size = 9))
+g2 <- ggplot(info_tot, aes(theta)) +
+  geom_area(aes(y = I), fill = cor_principal, alpha = 0.18) +
+  geom_line(aes(y = I), colour = cor_principal, linewidth = 1.1) +
+  geom_line(aes(y = EP), colour = cor_alerta, linewidth = 1, linetype = "22") +
+  annotate("text", x = -3.9, y = 2.45, label = "erro-padrão", colour = cor_alerta,
+           size = 3.6, hjust = 0) +
+  annotate("text", x = th_max, y = max(info_tot$I) + 0.25,
+           label = "informação do teste", colour = cor_principal, size = 3.6) +
+  coord_cartesian(ylim = c(0, 2.6)) +
+  labs(title = "Informação do teste e erro-padrão", subtitle = "EP(θ) = 1/√I(θ)",
+       x = expression(theta), y = NULL)
+g1 + g2
+
+info_alta <- information(mod_2pl, c(0, 4))$InfoRange     # funcao do script da aula
+info_baixa <- information(mod_2pl, c(-4, 0))$InfoRange
+prop_alta <- 100 * info_alta / (info_alta + info_baixa)
+```
+
+::: {.small}
+A informação do teste é a soma das informações dos itens (aula 2), com máximo em
+$\theta = `r fmtm(th_max, 2)`$. **`r pct(prop_alta)` da informação em $[-4, 4]$ está acima
+de $\theta = 0$** (`information()`): a escala distingue bem estabelecimentos de
+institucionalização média e alta, e mal os da parte baixa, onde o erro-padrão cresce
+rapidamente.
+:::
+
+# Estimação do traço latente {background-color="#0d3b66"}
+
+## Estimação por EAP
+
+```{r}
+#| label: escores
+#| echo: true
+fs    <- factor.scores(mod_2pl, resp.patterns = itens, method = "EAP")
+theta <- fs$score.dat$z1        # traço estimado
+ep    <- fs$score.dat$se.z1     # erro-padrão (desvio-padrão a posteriori)
+write.csv2(data.frame(wirs, theta, ep), "dados/wirs_theta.csv",   # como no script da aula
+           row.names = FALSE)
+```
+
+```{r}
+#| label: escores-aux
+escore  <- rowSums(itens)
+n_zeros <- sum(escore == 0); n_uns <- sum(escore == ncol(itens))
+th_eb   <- factor.scores(mod_2pl, resp.patterns = itens)$score.dat$z1   # padrao do script (EB)
+rel     <- var(theta) / (var(theta) + mean(ep^2))
+assim   <- mean((theta - mean(theta))^3) / sd(theta)^3
+```
+
+:::: {.columns}
+::: {.column width="56%"}
+::: {.small}
+**Por que EAP** (média a posteriori, aula 5)?
+
+- `r n_zeros` estabelecimentos (`r pct(100 * n_zeros / n_obs)`) não usaram **nenhum** dos
+  quatro canais e `r n_uns` usaram **todos**. Nesses padrões a máxima verossimilhança dá
+  $\hat\theta = -\infty$ e $+\infty$.
+- O EAP combina a verossimilhança com a priori $N(0,1)$, é finito para todo padrão e traz
+  o **desvio-padrão a posteriori** como erro-padrão.
+- O padrão de `factor.scores` no script da aula (EB, moda a posteriori) dá praticamente o
+  mesmo resultado (correlação `r if (cor(theta, th_eb) > 0.999) "> 0,999" else fmt(cor(theta, th_eb), 3)`).
+:::
+:::
+
+::: {.column width="44%"}
+::: {.destaque}
+Com 4 itens dicotômicos há $2^4 = 16$ padrões possíveis, e por isso $\hat\theta$ assume
+apenas **`r length(unique(round(theta, 6)))` valores**: estabelecimentos com o mesmo padrão
+recebem o mesmo $\hat\theta$.
+:::
+
+<!-- ::: {.small}
+Os `r n_obs` $\hat\theta$, com seus erros-padrão, ficam salvos em `dados/wirs_theta.csv`.
+::: -->
+
+:::
+::::
+
+## Distribuição do traço estimado
+
+```{r}
+#| label: plot-wright
+#| fig-height: 3.7
+massa <- data.frame(theta) |> count(theta) |> mutate(p = n / sum(n))
+lim_x <- c(-1.6, 2.3)
+g_pes <- ggplot(massa, aes(theta, p)) +
+  geom_segment(aes(xend = theta, yend = 0), colour = cor_principal, linewidth = 1.6) +
+  geom_point(colour = cor_principal, size = 2) +
+  geom_vline(xintercept = median(theta), colour = cor_destaque, linetype = "22") +
+  annotate("text", x = median(theta) + 0.05, y = 0.38, label = "mediana", hjust = 0,
+           colour = cor_destaque, size = 3.6) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  coord_cartesian(xlim = lim_x) +
+  labs(title = "Estabelecimentos: distribuição de θ estimado", x = NULL, y = NULL)
+g_it <- ggplot(data.frame(b = cf[, "Dffclt"], lab = rot4), aes(b, reorder(lab, b))) +
+  geom_point(colour = cor_destaque, size = 4) +
+  coord_cartesian(xlim = lim_x) +
+  labs(title = "Itens: dificuldade b na mesma escala", x = expression(theta ~ "ou" ~ b), y = NULL)
+g_pes / g_it + plot_layout(heights = c(1.5, 1))
+```
+
+::: {.small}
+Média = `r fmt(abs(mean(theta)), 2)`, DP = `r fmt(sd(theta), 2)`, mediana =
+`r fmt(median(theta), 2)`, quartis = `r fmt(quantile(theta, .25), 2)` e
+`r fmt(quantile(theta, .75), 2)`, mínimo = `r fmt(min(theta), 2)`, máximo =
+`r fmt(max(theta), 2)`, assimetria = `r fmt(assim, 2)`. A distribuição é **assimétrica à
+direita**: `r pct(100 * n_zeros / n_obs)` estão no piso, e os itens ficam **acima** da
+maior parte dos estabelecimentos.
+:::
+
+## Precisão de cada estimativa
+
+:::: {.columns}
+::: {.column width="55%"}
+```{r}
+#| label: plot-ic
+#| fig-width: 6.2
+#| fig-height: 4.9
+pad <- data.frame(itens, theta, ep) |>
+  mutate(pat = paste0(I3, I4, I5, I6)) |>
+  count(pat, theta, ep) |>
+  arrange(theta)
+ggplot(pad, aes(theta, reorder(pat, theta))) +
+  geom_segment(aes(x = theta - 2 * ep, xend = theta + 2 * ep), colour = "grey65",
+               linewidth = 1.2) +
+  geom_point(aes(size = n), colour = cor_principal) +
+  scale_size_area(max_size = 7, guide = "none") +
+  labs(title = "θ estimado ± 2 EP para cada padrão",
+       subtitle = "ponto proporcional ao nº de estabelecimentos",
+       x = expression(theta), y = "padrão (I3 I4 I5 I6)")
+```
+:::
+
+::: {.column width="45%"}
+::: {.small}
+- O **erro-padrão** vai de `r fmt(min(ep), 2)` (padrões mistos) a `r fmt(max(ep), 2)`
+  (nenhum canal). Com 4 itens binários, a posição de cada estabelecimento é **imprecisa**
+  e os intervalos se sobrepõem.
+- **Confiabilidade empírica** =
+  $\mathrm{Var}(\hat\theta) \,/\, [\mathrm{Var}(\hat\theta) + \overline{EP^2}]$ =
+  **`r fmt(rel, 2)`**: baixa. As referências usuais são 0,70 em pesquisa e 0,90 para
+  decisões individuais.
+- **Encolhimento do EAP:** DP($\hat\theta$) = `r fmt(sd(theta), 2)` < 1, porque cada
+  estimativa é puxada para a média da a priori.
+- **Uso adequado:** comparar **médias de grupos** de estabelecimentos, em que o erro de
+  medida se dilui, e não classificar um estabelecimento isolado.
+:::
+:::
+::::
+
+## Descrição do traço estimado
+
+```{r}
+#| label: tab-perfis
+escala <- function(z) 50 + 10 * z      # mudanca de escala (aula 3)
+nome_pat <- function(p) {
+  usados <- itens_curto4[strsplit(p, "")[[1]] == "1"]
+  if (length(usados) == 0) "nenhum canal coletivo" else paste(tolower(usados), collapse = " + ")
+}
+perfis <- data.frame(itens, theta, ep, escore) |>
+  mutate(pat = paste0(I3, I4, I5, I6)) |>
+  group_by(escore) |>
+  summarise(n = n(),
+            faixa = if (min(theta) == max(theta)) fmt(escala(min(theta)), 0) else
+              paste0(fmt(escala(min(theta)), 0), " a ", fmt(escala(max(theta)), 0)),
+            ep_med = mean(ep),
+            modal = names(which.max(table(pat))),
+            n_modal = max(table(pat)), .groups = "drop") |>
+  mutate(perfil = paste0(sapply(modal, nome_pat), " (", n_modal, ")"))
+
+mins <- tapply(theta, escore, min); maxs <- tapply(theta, escore, max)
+ordem_ok <- all(maxs[-length(maxs)] < mins[-1])     # faixas por escore nao se sobrepoem
+n_piso_dir <- sum(escore == 0 & (wirs$I1 == 1 | wirs$I2 == 1))   # piso com canal direto
+
+kable(data.frame(
+  `Canais coletivos usados` = perfis$escore,
+  `% dos estabelecimentos` = pct(100 * perfis$n / n_obs, 1),
+  `θ na escala 50 ± 10` = perfis$faixa,
+  `EP médio` = fmt(perfis$ep_med, 2),
+  `Combinação mais comum (n)` = perfis$perfil,
+  check.names = FALSE), align = "crrrl")
+```
+
+::: {.small style="margin-top: 1em;"}
+- **O que $\hat\theta$ ordena:** `r if (ordem_ok) "primeiro o **número** de canais coletivos usados (as faixas não se sobrepõem)" else "aproximadamente o número de canais coletivos usados"`;
+  dentro do mesmo número, desempata pelo **peso $a$** de cada canal. Só sindicato interno →
+  `r fmt(escala(pad$theta[pad$pat == "0010"]), 0)` pontos; só comitê ad hoc →
+  `r fmt(escala(pad$theta[pad$pat == "0100"]), 0)`: **mesmo escore bruto, estimativas
+  diferentes** (aula 3), embora a diferença fique dentro do erro-padrão.
+- **Perfil da amostra:** `r pct(100 * n_zeros / n_obs)` não acionaram nenhuma estrutura
+  coletiva. Desses, `r n_piso_dir` consultaram só por canais diretos (I1 ou I2) e
+  `r n_zeros - n_piso_dir` não consultaram por nenhum canal. Quem aciona uma estrutura
+  usa sobretudo o **sindicato interno**; só `r pct(100 * mean(escore >= 3))` chegam a três
+  ou quatro.
+- A escala $50 + 10\hat\theta$ é uma **mudança de escala** que só evita valores negativos.
+:::
+
+## Conclusões
+
+::: {.destaque .small}
+1. **Traço:** grau de institucionalização da consulta aos trabalhadores diante de uma
+   mudança tecnológica.
+2. **Itens:** I1 viola os três pressupostos; I2 mantém uma 2ª dimensão e dependência local
+   com I4. O traço é medido pelos quatro canais coletivos, **I3–I6**, que não mostram
+   violação de nenhum dos três pressupostos.
+3. **Modelo: 2PL.** Vence o 1PL (TRV e ajuste). O 3PL só melhora o ajuste em I4,
+   com um parâmetro que os dados não determinam e sem mudar a ordem dos $\hat\theta$.
+4. **Traço estimado (EAP):** assimétrico à direita, com `r pct(100 * n_zeros / n_obs)` no
+   piso. $\hat\theta$ ordena os estabelecimentos pelo número e pelo peso dos canais
+   coletivos usados.
+:::
+
+::: {.small}
+**Limitações.** Confiabilidade **baixa** (`r fmt(rel, 2)`) e só 16 valores possíveis de
+$\hat\theta$, por serem 4 itens binários: a escala serve para comparar grupos. Há pouca
+informação na parte baixa da escala e um desvio localizado em I4 (mais estabelecimentos
+usam só o comitê ad hoc do que o 2PL prevê). Os itens foram escolhidos e o modelo avaliado com os mesmos dados.
+Os canais diretos (I1, I2) seguem outra lógica, que esta escala não mede. 
+<!-- Por fim, um bom ajuste mostra que a escala
+**explica as associações** entre os itens, não que o traço "exista": ela é um construto,
+julgado pela sua utilidade. -->
+:::
+
+# Obrigado! {background-color="#0d3b66"}
+
+<!-- ::: {.small}
+Código, dados e apresentação reproduzíveis em Quarto + R:
+`apresentacao2.qmd` · `dados/WIRS.csv`
+:::
+
+::: {.rodape-fonte}
+Bartholomew, D. J. (1998). Scaling unobservable constructs in social science. *Applied
+Statistics*, 47, 1–13. · Rizopoulos, D. (2006). ltm: An R package for latent variable
+modelling and item response theory analyses. *Journal of Statistical Software*, 17(5).
+::: -->
